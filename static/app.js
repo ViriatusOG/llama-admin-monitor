@@ -1,6 +1,6 @@
 // ─── App shell: navigation + responsive drawer ────────────────────────────
 
-const SECTIONS = ['monitor', 'presets', 'bench', 'chat', 'models'];
+const SECTIONS = ['monitor', 'presets', 'bench', 'chat', 'models', 'updates'];
 let activeSection = 'monitor';
 
 function switchTab(name) {
@@ -20,6 +20,7 @@ function switchTab(name) {
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
+    if (name === 'updates') checkAppUpdates();
 
     const wasOpen = document.getElementById('sidebar').classList.contains('open');
     setNavigationOpen(false);
@@ -2296,6 +2297,87 @@ async function sendChat() {
 }
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+async function checkAppUpdates() {
+    document.getElementById('updates-loading').style.display = 'block';
+    document.getElementById('updates-available-group').style.display = 'none';
+    document.getElementById('update-main-row').style.display = 'none';
+    document.getElementById('update-beta-row').style.display = 'none';
+    
+    try {
+        const res = await fetch('/api/app/update/check');
+        if (!res.ok) throw new Error('Failed to check updates');
+        const data = await res.json();
+        
+        document.getElementById('update-current-branch').textContent = data.current_branch + ' (' + data.current_commit + ')';
+        document.getElementById('updates-loading').style.display = 'none';
+        
+        let hasUpdates = false;
+        
+        if (data.main_latest_commit && data.main_latest_commit !== data.current_commit) {
+            hasUpdates = true;
+            document.getElementById('update-main-row').style.display = 'flex';
+            document.getElementById('update-main-desc').textContent = 'Latest: ' + data.main_latest_commit;
+        }
+        
+        if (data.beta_latest_commit && data.beta_latest_commit !== data.current_commit) {
+            hasUpdates = true;
+            document.getElementById('update-beta-row').style.display = 'flex';
+            document.getElementById('update-beta-desc').textContent = 'Latest: ' + data.beta_latest_commit;
+        }
+        
+        if (hasUpdates) {
+            document.getElementById('updates-available-group').style.display = 'block';
+        } else {
+            showToast('You are on the latest version!', 'success');
+        }
+    } catch (err) {
+        document.getElementById('updates-loading').style.display = 'none';
+        showToast('Error checking for updates: ' + err.message, 'error');
+    }
+}
+
+async function applyAppUpdate(branch) {
+    const proceed = await showConfirm('Install Update', 'This will download the latest ' + branch + ' branch, compile it, and restart the server. This may take a minute and the connection will drop. Proceed?');
+    if (!proceed) return;
+    
+    document.getElementById('updates-available-group').style.display = 'none';
+    document.getElementById('updates-installing').style.display = 'block';
+    
+    try {
+        // Stop the underlying llama-server first so it doesn't get orphaned when the process is replaced by exec()
+        if (serverRunning) {
+            await fetch('/api/stop', { method: 'POST' });
+        }
+
+        fetch('/api/app/update/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ branch })
+        });
+        
+        // Poll for server to come back online
+        let retries = 0;
+        const pollInterval = setInterval(async () => {
+            retries++;
+            if (retries < 3) return; // give it at least a few seconds to go down
+            
+            try {
+                const res = await fetch('/');
+                if (res.ok) {
+                    clearInterval(pollInterval);
+                    window.location.reload();
+                }
+            } catch (e) {
+                // still down
+            }
+        }, 2000);
+        
+    } catch (err) {
+        showToast('Failed to trigger update: ' + err.message, 'error');
+        document.getElementById('updates-installing').style.display = 'none';
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

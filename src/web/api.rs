@@ -10,6 +10,7 @@ use crate::models;
 use crate::models::hf;
 use crate::presets::{self, ModelPreset};
 use crate::state::{self as app_state, AppState, UiSettings};
+use crate::update;
 
 pub fn api_routes(
     state: AppState,
@@ -36,6 +37,8 @@ pub fn api_routes(
     let hf_files = api_hf_files();
     let hf_download = api_hf_download(state.clone());
     let v1_proxy = api_v1_proxy(state);
+    let app_update_check = api_app_update_check();
+    let app_update_apply = api_app_update_apply();
 
     start
         .or(stop)
@@ -57,6 +60,8 @@ pub fn api_routes(
         .or(hf_files)
         .or(hf_download)
         .or(v1_proxy)
+        .or(app_update_check)
+        .or(app_update_apply)
 }
 
 fn api_start(
@@ -766,4 +771,39 @@ fn api_bench_run(
                 warp::reply::json(&serde_json::json!({"ok": true}))
             },
         )
+}
+
+fn api_app_update_check() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("api" / "app" / "update" / "check")
+        .and(warp::get())
+        .map(|| {
+            match update::check_updates() {
+                Ok(status) => warp::reply::json(&status),
+                Err(e) => {
+                    let err = serde_json::json!({"error": e.to_string()});
+                    warp::reply::with_status(warp::reply::json(&err), warp::http::StatusCode::INTERNAL_SERVER_ERROR)
+                }
+            }
+        })
+}
+
+fn api_app_update_apply() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("api" / "app" / "update" / "apply")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(|body: std::collections::HashMap<String, String>| {
+            if let Some(branch) = body.get("branch") {
+                if branch == "main" || branch == "beta" {
+                    update::apply_update(branch.to_string());
+                    return warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"ok": true})),
+                        warp::http::StatusCode::OK
+                    );
+                }
+            }
+            warp::reply::with_status(
+                warp::reply::json(&serde_json::json!({"ok": false, "error": "Invalid branch"})),
+                warp::http::StatusCode::BAD_REQUEST
+            )
+        })
 }

@@ -100,8 +100,14 @@
                     <span class="nav-count" id="nav-count-models"></span>
                 </button>
             </div>
+            <div class="nav-group" role="group" aria-labelledby="nav-system">
+                <div class="nav-section-label" id="nav-system">System</div>
+                <button class="nav-item" data-section="updates">
+                    <span class="icon"><svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l5.65-5.65"/></svg></span>
+                    App Updates
+                </button>
+            </div>
         </nav>
-
         <div class="sidebar-footer">
             <details class="sidebar-runtime" id="sidebar-runtime">
                 <summary>
@@ -450,6 +456,73 @@
             <div class="card card-flush">
                 <div class="model-grid-header" id="models-header"></div>
                 <div id="models-list"></div>
+            </div>
+        </div>
+
+        <div class="section-panel" id="section-updates" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">App Updates</h1>
+                    <div class="page-title-sub">Check for and install updates to llama-admin-monitor.</div>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-primary" type="button" onclick="checkAppUpdates()">Check for Updates</button>
+                </div>
+            </div>
+            
+            <div class="card" id="updates-card">
+                <div class="settings-group">
+                    <div class="settings-row">
+                        <div class="settings-info">
+                            <div class="settings-label">Current Version</div>
+                            <div class="settings-desc">The actively running build</div>
+                        </div>
+                        <div class="settings-control">
+                            <span class="badge badge-accent" id="update-current-version">v{{VERSION}}</span>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <div class="settings-info">
+                            <div class="settings-label">Active Branch</div>
+                            <div class="settings-desc">Your local git checkout</div>
+                        </div>
+                        <div class="settings-control">
+                            <span class="badge badge-neutral" id="update-current-branch">--</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="settings-group" id="updates-available-group" style="display: none; border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4);">
+                    <h3 style="margin-top:0; margin-bottom: var(--space-3); color: var(--fg-bright); font-size: 14px;">Available Updates</h3>
+                    
+                    <div class="settings-row" id="update-main-row" style="display: none;">
+                        <div class="settings-info">
+                            <div class="settings-label">Stable Release (main)</div>
+                            <div class="settings-desc" id="update-main-desc">New commits available</div>
+                        </div>
+                        <div class="settings-control">
+                            <button class="btn btn-primary" onclick="applyAppUpdate('main')">Install Stable</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-row" id="update-beta-row" style="display: none;">
+                        <div class="settings-info">
+                            <div class="settings-label">Beta Release (beta)</div>
+                            <div class="settings-desc" id="update-beta-desc">New commits available</div>
+                        </div>
+                        <div class="settings-control">
+                            <button class="btn btn-primary" onclick="applyAppUpdate('beta')">Install Beta</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="updates-loading" style="display: none; text-align: center; padding: var(--space-4); color: var(--fg-muted);">
+                    Checking GitHub...
+                </div>
+                <div id="updates-installing" style="display: none; text-align: center; padding: var(--space-4); color: var(--accent);">
+                    <div style="font-weight: bold; margin-bottom: 8px;">Installing Update...</div>
+                    <div style="font-size: 12px; color: var(--fg-muted);">The server is compiling and restarting. This page will refresh automatically.</div>
+                </div>
             </div>
         </div>
 
