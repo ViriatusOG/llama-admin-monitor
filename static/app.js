@@ -2315,16 +2315,16 @@ async function checkAppUpdates() {
         
         let hasUpdates = false;
         
-        if (data.main_latest_commit && data.main_latest_commit !== data.current_commit) {
+        if (data.current_branch !== 'main' || (data.main_latest_commit && data.main_latest_commit !== data.current_commit)) {
             hasUpdates = true;
             document.getElementById('update-main-row').style.display = 'flex';
-            document.getElementById('update-main-desc').textContent = 'Latest: ' + data.main_latest_commit;
+            document.getElementById('update-main-desc').textContent = data.current_branch === 'main' ? 'Latest: ' + data.main_latest_commit : 'Switch to stable track';
         }
         
-        if (data.beta_latest_commit && data.beta_latest_commit !== data.current_commit) {
+        if (data.current_branch !== 'beta' || (data.beta_latest_commit && data.beta_latest_commit !== data.current_commit)) {
             hasUpdates = true;
             document.getElementById('update-beta-row').style.display = 'flex';
-            document.getElementById('update-beta-desc').textContent = 'Latest: ' + data.beta_latest_commit;
+            document.getElementById('update-beta-desc').textContent = data.current_branch === 'beta' ? 'Latest: ' + data.beta_latest_commit : 'Switch to beta track';
         }
         
         if (hasUpdates) {
