@@ -1,0 +1,12 @@
+{
+    "card0": {
+        "Temperature (Sensor junction) (C)": "45.0",
+        "GPU use (%)": "87",
+        "Current Socket Graphics Package Power (W)": "180.5",
+        "Max Graphics Package Power (W)": "300",
+        "VRAM Total Used Memory (B)": "16106127360",
+        "VRAM Total Memory (B)": "17179869184",
+        "sclk clock speed:": "(1725Mhz)",
+        "mclk clock speed:": "(1200Mhz)"
+    }
+}

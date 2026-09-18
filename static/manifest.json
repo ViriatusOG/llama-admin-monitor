@@ -1,0 +1,11 @@
+{
+    "name": "Llama Admin Monitor",
+    "short_name": "LlamaAdmin",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0f111a",
+    "theme_color": "#161824",
+    "icons": [
+        { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    ]
+}

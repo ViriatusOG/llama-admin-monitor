@@ -1,0 +1,24 @@
+# HELP llamacpp:prompt_tokens_seconds Prompt tokens per second (gauge)
+# TYPE llamacpp:prompt_tokens_seconds gauge
+llamacpp:prompt_tokens_seconds 1234.5
+# HELP llamacpp:predicted_tokens_seconds Predicted tokens per second (gauge)
+# TYPE llamacpp:predicted_tokens_seconds gauge
+llamacpp:predicted_tokens_seconds 56.7
+# HELP llamacpp:prompt_tokens_total Total prompt tokens processed
+# TYPE llamacpp:prompt_tokens_total counter
+llamacpp:prompt_tokens_total 10000
+# HELP llamacpp:prompt_seconds_total Total prompt processing seconds
+# TYPE llamacpp:prompt_seconds_total counter
+llamacpp:prompt_seconds_total 8.1
+# HELP llamacpp:tokens_predicted_total Total predicted tokens
+# TYPE llamacpp:tokens_predicted_total counter
+llamacpp:tokens_predicted_total 5000
+# HELP llamacpp:tokens_predicted_seconds_total Total predicted seconds
+# TYPE llamacpp:tokens_predicted_seconds_total counter
+llamacpp:tokens_predicted_seconds_total 88.2
+# HELP llamacpp:n_tokens_max Maximum context tokens
+# TYPE llamacpp:n_tokens_max gauge
+llamacpp:n_tokens_max 131072
+# HELP llamacpp:requests_processing Current requests processing
+# TYPE llamacpp:requests_processing gauge
+llamacpp:requests_processing 1

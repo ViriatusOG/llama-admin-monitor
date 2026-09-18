@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#161824">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <title>Llama Admin Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        // Applies the stored theme before first paint so a saved theme does
+        // not flash the default. Stays inline and blocking; theme.js
+        // normalises the attribute once it loads.
+        (function () {
+            var theme = 'tokyo';
+            var scheme = '';
+            try {
+                var stored = localStorage.getItem('llama_admin_monitor_theme');
+                if (stored && /^[a-z][a-z0-9-]*$/.test(stored)) theme = stored;
+                var storedScheme = localStorage.getItem('llama_admin_monitor_theme_scheme');
+                if (storedScheme === 'light' || storedScheme === 'dark') scheme = storedScheme;
+            } catch (e) {}
+            document.documentElement.dataset.theme = theme;
+            if (scheme) {
+                var meta = document.querySelector('meta[name="color-scheme"]');
+                if (meta) meta.setAttribute('content', scheme === 'light' ? 'light dark' : 'dark light');
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="/tokens.css">
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<div class="toast-container" id="toast-container" role="status" aria-live="polite"></div>
+
+<button class="mobile-toggle" id="mobile-toggle" type="button" aria-label="Open navigation" title="Open navigation" aria-controls="sidebar" aria-expanded="false">
+    <span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span>
+</button>
+<div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
+
+<div class="app-shell">
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo"><img src="/icon.svg" alt=""></div>
+            <div class="sidebar-brand-text">
+                <div class="sidebar-title">Llama Admin Monitor</div>
+                <div class="sidebar-subtitle">llama.cpp control panel</div>
+            </div>
+            <button class="btn btn-sm sidebar-close" id="sidebar-close" type="button" aria-label="Close navigation" title="Close navigation">&times;</button>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Workspace">
+            <button class="nav-item active" data-section="monitor" aria-current="page">
+                <span class="icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+                Monitor
+                <span id="monitor-nav-live" class="badge badge-green nav-badge hidden" title="llama-server is running"><span class="badge-dot" aria-hidden="true"></span>Live</span>
+            </button>
+
+            <div class="nav-group" role="group" aria-labelledby="nav-tune">
+                <div class="nav-section-label" id="nav-tune">Tune</div>
+                <button class="nav-item" data-section="presets">
+                    <span class="icon"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
+                    Presets
+                    <span class="nav-count" id="nav-count-presets"></span>
+                </button>
+                <button class="nav-item" data-section="bench">
+                    <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+                    Benchmark
+                    <span class="nav-count" id="nav-count-bench"></span>
+                </button>
+            </div>
+
+            <div class="nav-group" role="group" aria-labelledby="nav-interact">
+                <div class="nav-section-label" id="nav-interact">Interact</div>
+                <button class="nav-item" data-section="chat">
+                    <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                    Chat
+                    <span class="nav-count" id="nav-count-chat"></span>
+                </button>
+            </div>
+
+            <div class="nav-group" role="group" aria-labelledby="nav-library">
+                <div class="nav-section-label" id="nav-library">Library</div>
+                <button class="nav-item" data-section="models">
+                    <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
+                    Models
+                    <span class="nav-count" id="nav-count-models"></span>
+                </button>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <details class="sidebar-runtime" id="sidebar-runtime">
+                <summary>
+                    <span class="sidebar-runtime-heading">Runtime</span>
+                    <span id="sidebar-runtime-state" data-phase="idle" role="status">Connecting…</span>
+                    <span id="sidebar-runtime-model">No server running</span>
+                </summary>
+                <div class="sidebar-runtime-detail">
+                    <span id="sidebar-runtime-endpoint"></span>
+                    <button class="btn btn-sm" type="button" data-goto="monitor">Open Monitor</button>
+                </div>
+            </details>
+
+            <form class="sidebar-launch" id="controls" onsubmit="return false;">
+                <label class="form-label" for="preset-select">Preset</label>
+                <select id="preset-select" aria-label="Model preset"></select>
+                <div class="sidebar-launch-row">
+                    <label class="sidebar-port" for="port"><span class="form-label form-label-inline">Port</span>
+                        <input id="port" type="number" value="8080" min="1" max="65535">
+                    </label>
+                    <button class="btn btn-primary sidebar-launch-btn" id="btn-toggle" type="button" onclick="doToggle()">
+                        <span class="icon icon-sm" id="btn-toggle-icon"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+                        <span id="btn-toggle-label">Start server</span>
+                    </button>
+                </div>
+                <button class="btn btn-sm btn-open-ui hidden" type="button" onclick="openLlamaUi()">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
+                    Open llama-server UI
+                </button>
+            </form>
+
+            <div class="sidebar-meta-row">
+                <div class="theme-menu" id="theme-menu">
+                    <button class="theme-menu-trigger" id="theme-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="theme-menu-list" title="Change theme">
+                        <span class="theme-menu-swatch" id="theme-menu-current-swatch" aria-hidden="true"></span>
+                        <span class="theme-menu-current" id="theme-menu-current">Theme</span>
+                        <span class="icon icon-sm theme-menu-chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
+                    </button>
+                    <ul class="theme-menu-list" id="theme-menu-list" role="menu" aria-label="Theme" hidden></ul>
+                </div>
+                <button class="btn sidebar-settings" type="button" onclick="openConfigModal()" title="Configuration">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+                    Settings
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+
+        <!-- ═══ MONITOR ═══ -->
+        <div class="section-panel" id="section-monitor">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Monitor</h1>
+                    <div class="page-title-sub">Follow the running server, inference activity, and this machine's GPUs.</div>
+                </div>
+                <div class="page-actions">
+                    <span class="badge badge-dim" id="monitor-telemetry-badge">GPU telemetry · Waiting</span>
+                    <span class="monitor-updated">Updated <span id="monitor-last-updated">--:--:--</span></span>
+                </div>
+            </div>
+
+            <section class="monitor-runtime" aria-label="Active runtime">
+                <div class="monitor-runtime-heading">
+                    <div class="monitor-runtime-identity">
+                        <span class="badge badge-neutral" id="monitor-runtime-state" aria-live="polite">Connecting…</span>
+                        <strong id="monitor-runtime-model">No server running</strong>
+                    </div>
+                    <div class="page-actions">
+                        <button class="btn btn-sm btn-open-ui hidden" type="button" onclick="openLlamaUi()">Open llama-server UI</button>
+                        <button class="btn btn-sm" type="button" data-goto="presets">Open Presets</button>
+                        <button class="btn btn-sm" type="button" onclick="openConfigModal()">Configure</button>
+                    </div>
+                </div>
+                <div class="monitor-runtime-details" id="monitor-runtime-details"></div>
+                <div class="status-box error" id="monitor-error" hidden></div>
+            </section>
+
+            <div class="card monitor-output-card">
+                <div class="card-header card-header-tight">
+                    <h3>Process Output</h3>
+                    <div class="monitor-output-tools">
+                        <span class="badge badge-neutral hidden" id="monitor-process-tool">llama-server</span>
+                        <span class="badge badge-green hidden" id="monitor-process-state">Running</span>
+                        <span class="monitor-sep" aria-hidden="true"></span>
+                        <button class="btn btn-sm btn-ghost" id="btn-clear-output" type="button" onclick="clearOutput()">Clear</button>
+                    </div>
+                </div>
+                <div id="log-panel" class="terminal" aria-label="llama-server output"></div>
+            </div>
+
+            <div class="monitor-section">
+                <p class="help-text monitor-scope-note">Inference readings come from llama-server's <code>/metrics</code> endpoint. GPU readings cover this machine, including other applications.</p>
+                <div class="monitor-metrics-grid">
+
+                    <div class="card monitor-inference-card">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-kicker" id="monitor-inference-kicker">Llama server</div>
+                                <div class="card-title">Inference</div>
+                            </div>
+                            <span class="badge badge-dim" id="m-status">&mdash;</span>
+                        </div>
+                        <div class="monitor-inference-summary">
+                            <div class="monitor-inference-stat">
+                                <span class="monitor-metric-label">Prompt speed</span>
+                                <span class="monitor-metric-reading" id="m-prompt">&mdash;</span>
+                            </div>
+                            <div class="monitor-inference-stat">
+                                <span class="monitor-metric-label">Generation speed</span>
+                                <span class="monitor-metric-reading" id="m-gen">&mdash;</span>
+                            </div>
+                            <div class="monitor-inference-stat">
+                                <span class="monitor-metric-label">Slots</span>
+                                <span class="monitor-metric-reading" id="m-slots">&mdash;</span>
+                            </div>
+                        </div>
+                        <div class="monitor-metric-row">
+                            <span class="monitor-metric-label">Context (KV cache)</span>
+                            <span class="monitor-metric-reading" id="m-ctx">&mdash;</span>
+                        </div>
+                        <div class="progress-bar"><div class="progress-fill" id="m-ctx-bar"></div></div>
+                    </div>
+
+                    <div class="card monitor-vram-card">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-kicker">GPU memory</div>
+                                <div class="card-title">VRAM usage</div>
+                            </div>
+                            <span class="badge badge-neutral" id="vram-total-badge">&mdash;</span>
+                        </div>
+                        <div class="vram-bar-wrap"><div class="vram-bar" id="vram-bar"></div></div>
+                        <div class="vram-legend" id="vram-legend"></div>
+                    </div>
+
+                    <div id="gpu-cards" class="monitor-gpu-cards"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ PRESETS ═══ -->
+        <div class="section-panel" id="section-presets" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Presets</h1>
+                    <div class="page-title-sub">Saved llama-server configurations. The active preset is what Start launches.</div>
+                </div>
+                <div class="page-actions">
+                    <button class="btn" type="button" onclick="resetPresets()" title="Reset all presets to built-in defaults">Reset to defaults</button>
+                    <button class="btn btn-primary" type="button" onclick="openPresetModal('new')">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                        New preset
+                    </button>
+                </div>
+            </div>
+            <div class="card card-flush">
+                <div id="presets-list" class="presets-list"></div>
+            </div>
+        </div>
+
+        <!-- ═══ BENCHMARK ═══ -->
+        <div class="section-panel" id="section-bench" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Benchmark</h1>
+                    <div class="page-title-sub">Sweep tensor-split ratios through llama-bench and apply the fastest one to a preset.</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Find best tensor split</h3>
+                <div class="form-row bench-controls">
+                    <div class="form-group bench-model-group">
+                        <label class="form-label" for="bench-model-select">Model</label>
+                        <select id="bench-model-select"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bench-splits" title="One ratio per line or comma-separated. Use / between GPUs, e.g. 65/35">Ratios</label>
+                        <input type="text" id="bench-splits" placeholder="50/50, 61/39, 65/35">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bench-ngl" title="Layers offloaded to GPU during benchmarking">GPU layers</label>
+                        <input type="number" id="bench-ngl" value="999">
+                    </div>
+                    <div class="form-group bench-action-group">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-primary" id="btn-bench-toggle" type="button" onclick="toggleBenchmark()">Start benchmark</button>
+                    </div>
+                </div>
+                <p class="help-text">Stop the llama.cpp server first: benchmarking needs the GPUs. Ratios are slash-separated per GPU, e.g. <code>65/35</code> or <code>7/8/8/8</code>.</p>
+            </div>
+
+            <div class="card monitor-section" id="bench-panel" hidden>
+                <div class="card-header card-header-tight">
+                    <h3>Results</h3>
+                    <span class="help-text" id="bench-status"></span>
+                </div>
+                <div class="progress-bar bench-progress"><div class="progress-fill" id="bench-bar"></div></div>
+                <div class="bench-grid-header">
+                    <span>Tensor split</span><span>Prompt t/s</span><span>Generation t/s</span><span></span>
+                </div>
+                <div id="bench-results"></div>
+            </div>
+
+            <div class="card monitor-section">
+                <div class="card-header">
+                    <div>
+                        <div class="card-kicker">GPU memory</div>
+                        <div class="card-title">VRAM usage</div>
+                    </div>
+                </div>
+                <div class="vram-bar-wrap"><div class="vram-bar"></div></div>
+                <div class="vram-legend"></div>
+            </div>
+        </div>
+
+        <!-- ═══ CHAT ═══ -->
+        <div class="section-panel" id="section-chat" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Chat</h1>
+                    <div class="page-title-sub">Streams from the running server's <code>/v1/chat/completions</code>, with reasoning blocks and Markdown.</div>
+                </div>
+                <div class="page-actions">
+                    <span class="badge badge-dim" id="chat-server-badge">Server stopped</span>
+                    <button class="btn btn-sm" type="button" onclick="clearChat()">Clear</button>
+                </div>
+            </div>
+            <div class="card chat-card">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="empty-state" id="chat-empty">
+                        <div class="empty-state-title">No messages yet</div>
+                        <p>Start the server, then send a message below.</p>
+                    </div>
+                </div>
+                <div class="chat-input-row">
+                    <textarea id="chat-input" rows="2" placeholder="Send a message… (Enter to send, Shift+Enter for newline)"></textarea>
+                    <button class="btn btn-primary" id="btn-send" type="button" onclick="sendChat()">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ MODELS ═══ -->
+        <div class="section-panel" id="section-models" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Models</h1>
+                    <div class="page-title-sub">Every <code>.gguf</code> in your models directory, with VRAM fit and Hugging Face provenance.</div>
+                </div>
+                <div class="page-actions">
+                    <button class="btn" type="button" onclick="loadModelsTab()">Rescan</button>
+                    <button class="btn btn-primary" type="button" onclick="openHfModal()">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+                        Download from Hugging Face
+                    </button>
+                </div>
+            </div>
+            <div class="card download-banner" id="models-hf-banner" hidden>
+                <div class="download-banner-row">
+                    <span id="models-hf-banner-name"></span>
+                    <span class="mono" id="models-hf-banner-pct"></span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="models-hf-banner-bar"></div></div>
+            </div>
+            <div class="card card-flush">
+                <div class="model-grid-header" id="models-header"></div>
+                <div id="models-list"></div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- Config Modal -->
+<div class="modal-overlay" id="config-modal">
+    <div class="modal modal-md">
+        <div class="modal-header">
+            <h2>Configuration</h2>
+            <button type="button" class="modal-close" onclick="closeConfigModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+
+            <details class="modal-section" open>
+                <summary>Server paths</summary>
+                <label class="modal-field" title="Path to the llama-server binary. Leave empty to use $PATH.">llama-server binary
+                    <div class="input-row">
+                        <input type="text" id="set-server-path" placeholder="llama-server (from $PATH)">
+                        <button type="button" class="btn btn-sm" onclick="openFileBrowser('set-server-path','executable')">Browse</button>
+                    </div>
+                </label>
+                <label class="modal-field" title="Working directory for llama-server process.">Working directory
+                    <div class="input-row">
+                        <input type="text" id="set-server-cwd" placeholder=". (current dir)">
+                        <button type="button" class="btn btn-sm" onclick="openFileBrowser('set-server-cwd','dir')">Browse</button>
+                    </div>
+                </label>
+                <label class="modal-field" title="Directory where .gguf models live. Used for model discovery and Hugging Face downloads.">Models directory
+                    <div class="input-row">
+                        <input type="text" id="set-models-dir" placeholder="/home/user/models">
+                        <button type="button" class="btn btn-sm" onclick="openFileBrowser('set-models-dir','dir')">Browse</button>
+                    </div>
+                </label>
+            </details>
+
+            <details class="modal-section" open>
+                <summary>GPU environment <span class="summary-hint" id="gpu-env-info"></span></summary>
+                <div class="modal-row">
+                    <label class="modal-field" title="GPU architecture for ROCm HSA_OVERRIDE_GFX_VERSION. Auto = let ROCm detect natively.">Architecture
+                        <select id="gpu-env-arch"></select>
+                    </label>
+                    <label class="modal-field" title="Comma-separated GPU device indices to use (e.g. 0,1,2,3). Empty = all GPUs.">GPU devices
+                        <input type="text" id="gpu-env-devices" placeholder="all">
+                    </label>
+                </div>
+                <label class="modal-field" title="Path to ROCm installation directory.">ROCm path
+                    <input type="text" id="gpu-env-rocm-path" value="/opt/rocm">
+                </label>
+                <div class="help-text" id="gpu-detected-info"></div>
+            </details>
+
+        </div>
+        <div class="modal-buttons">
+            <button type="button" class="btn" onclick="closeConfigModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="saveConfig()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- File Browser Modal (z-index above all modals) -->
+<div class="modal-overlay modal-overlay-top" id="file-browser-modal">
+    <div class="modal modal-md">
+        <div class="modal-header">
+            <h2>Browse</h2>
+            <button type="button" class="modal-close" onclick="closeFileBrowser()" aria-label="Close">&times;</button>
+        </div>
+        <div class="file-browser-bar">
+            <button class="btn btn-sm" type="button" onclick="fileBrowserUp()" title="Parent directory">&uarr; Up</button>
+            <input type="text" id="fb-path-input" class="fb-path-input" onkeydown="if(event.key==='Enter')fileBrowserGo(this.value)">
+        </div>
+        <div id="fb-header" class="fb-header"></div>
+        <div class="modal-body modal-body-flush">
+            <div id="fb-entries" class="fb-entries"></div>
+        </div>
+        <div class="modal-buttons">
+            <button type="button" class="btn" onclick="closeFileBrowser()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="fileBrowserSelect()">Select this folder</button>
+        </div>
+    </div>
+</div>
+
+<!-- Hugging Face Download Modal -->
+<div class="modal-overlay modal-overlay-top" id="hf-modal">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <h2>Download from Hugging Face</h2>
+            <button type="button" class="modal-close" onclick="closeHfModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="file-browser-bar">
+            <input type="text" id="hf-search-input" class="fb-path-input" placeholder="Search models (e.g. qwen, llama, mistral)…" onkeydown="if(event.key==='Enter')hfSearch()">
+            <button class="btn btn-sm" type="button" onclick="hfSearch()">Search</button>
+            <button class="btn btn-sm hidden" type="button" id="hf-back-btn" onclick="hfShowRepos()">&larr; Back</button>
+        </div>
+        <div id="hf-hint" class="help-text modal-hint">Click a model to view its available files.</div>
+        <div id="hf-repo-header" class="fb-header">
+            <span>Model</span><span>Downloads</span>
+        </div>
+        <div id="hf-file-header" class="fb-header hidden">
+            <span>File (click to download)</span><span>Fits VRAM?</span><span>Size</span>
+        </div>
+        <div class="modal-body modal-body-flush">
+            <div id="hf-repo-list" class="fb-entries"></div>
+            <div id="hf-file-list" class="fb-entries hidden"></div>
+        </div>
+        <div id="hf-download-progress" class="modal-progress" hidden>
+            <div class="download-banner-row">
+                <span id="hf-progress-filename"></span>
+                <span class="mono" id="hf-progress-pct"></span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="hf-progress-bar"></div></div>
+        </div>
+        <div class="modal-buttons">
+            <button type="button" class="btn" onclick="closeHfModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Generic Confirm Modal -->
+<div class="modal-overlay modal-overlay-topmost" id="confirm-modal">
+    <div class="modal modal-sm">
+        <div class="modal-header">
+            <h2 id="confirm-title">Confirm</h2>
+            <button type="button" class="modal-close" onclick="closeConfirmModal(false)" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="confirm-message" class="confirm-message"></p>
+        </div>
+        <div class="modal-buttons">
+            <button type="button" class="btn" onclick="closeConfirmModal(false)">Cancel</button>
+            <button type="button" class="btn btn-primary" id="confirm-ok" onclick="closeConfirmModal(true)">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- Preset Modal -->
+<div class="modal-overlay" id="preset-modal">
+    <div class="modal modal-md">
+        <div class="modal-header">
+            <h2 id="modal-title">New preset</h2>
+            <button type="button" class="modal-close" onclick="closePresetModal()" aria-label="Close">&times;</button>
+        </div>
+        <form id="preset-form" onsubmit="savePreset(event)">
+            <input type="hidden" id="modal-preset-id">
+            <div class="modal-body">
+
+            <details class="modal-section" open>
+                <summary>Model &amp; memory</summary>
+                <label class="modal-field" title="Display name for this preset">Name
+                    <input type="text" id="modal-name" required>
+                    <span class="field-error-msg">Name is required</span>
+                </label>
+                <label class="modal-field" title="Absolute path to the .gguf model file on disk">Model path
+                    <div class="input-row">
+                        <input type="text" id="modal-model-path" required>
+                        <button type="button" class="btn btn-sm" onclick="openFileBrowser('modal-model-path','gguf')" title="Browse filesystem for .gguf files">Browse</button>
+                        <button type="button" class="btn btn-sm" onclick="openHfModal()" title="Search and download a model from Hugging Face">Hugging Face<span id="hf-badge" class="hf-badge hidden"></span></button>
+                    </div>
+                    <span class="field-error-msg">Model path is required</span>
+                </label>
+                <div class="modal-row">
+                    <label class="modal-field" title="Number of layers to offload to GPU. 99 = all layers. Lower values keep some layers on CPU to save VRAM.">GPU layers (-ngl)
+                        <input type="number" id="modal-gpu-layers" placeholder="99">
+                    </label>
+                </div>
+                <div class="modal-checks">
+                    <label class="chk" title="Disable memory-mapped I/O. Required for models >16GB or on network storage."><input type="checkbox" id="modal-no-mmap"> no-mmap</label>
+                    <label class="chk" title="Lock model in RAM, preventing OS from swapping it to disk. Improves performance but requires enough physical RAM."><input type="checkbox" id="modal-mlock"> mlock</label>
+                </div>
+            </details>
+
+            <details class="modal-section" open>
+                <summary>Context &amp; KV cache</summary>
+                <label class="modal-field" title="Maximum context length in tokens. Larger values use more VRAM. Auto-enables YaRN scaling above 262144.">Context size (-c)
+                    <input type="number" id="modal-context-size" value="128000">
+                </label>
+                <div class="modal-row">
+                    <label class="modal-field" title="KV cache key quantization type: f16 (best quality), q8_0, turbo3 (4.6x compression, fast)">KV key type (-ctk)
+                        <input type="text" id="modal-ctk" value="q8_0">
+                    </label>
+                    <label class="modal-field" title="KV cache value quantization type: f16 (best quality), q8_0, turbo3 (4.6x compression, fast)">KV value type (-ctv)
+                        <input type="text" id="modal-ctv" value="f16">
+                    </label>
+                    <label class="modal-field" title="Flash Attention mode: auto (default), on, off. Speeds up inference when supported by model architecture.">Flash attn (-fa)
+                        <select id="modal-flash-attn">
+                            <option value="">(default)</option>
+                            <option value="auto">auto</option>
+                            <option value="on">on</option>
+                            <option value="off">off</option>
+                        </select>
+                    </label>
+                </div>
+            </details>
+
+            <details class="modal-section" open>
+                <summary>Batching &amp; slots</summary>
+                <div class="modal-row">
+                    <label class="modal-field" title="Logical batch size: max tokens processed in parallel during prompt evaluation. Higher = faster prompts, more VRAM.">Batch size (-b)
+                        <input type="number" id="modal-batch-size" value="2048">
+                    </label>
+                    <label class="modal-field" title="Physical micro-batch size. Controls memory granularity. Usually same as batch_size.">Micro-batch (-ub)
+                        <input type="number" id="modal-ubatch-size" value="2048">
+                    </label>
+                    <label class="modal-field" title="Number of concurrent inference slots. Each slot reserves context_size tokens of KV cache VRAM.">Parallel slots (-np)
+                        <input type="number" id="modal-parallel-slots" value="1">
+                    </label>
+                </div>
+            </details>
+
+            <details class="modal-section">
+                <summary>GPU distribution</summary>
+                <label class="modal-field" title="Layer distribution ratio across GPUs, slash-separated (e.g. '65/35' for 2 GPUs, '7/8/8/8' for 4). Commas are parsed as a single value and put the whole model on the first GPU. Leave empty for single GPU.">Tensor split (-ts)
+                    <input type="text" id="modal-tensor-split" placeholder="7/8/8/8">
+                </label>
+                <label class="modal-field" title="Vulkan runs across all GPUs. CUDA is NVIDIA-only but noticeably faster -- use it for models that fit on the NVIDIA card alone.">Backend
+                    <select id="modal-backend" onchange="onBackendChange()">
+                        <option value="vulkan">Vulkan (all GPUs)</option>
+                        <option value="cuda">CUDA (NVIDIA only)</option>
+                    </select>
+                </label>
+                <div class="modal-row">
+                    <label class="modal-field" title="How to split the model across GPUs: layer (default, split by layer) or row (split large tensors).">Split mode
+                        <select id="modal-split-mode">
+                            <option value="">(default)</option>
+                            <option value="layer">layer</option>
+                            <option value="row">row</option>
+                        </select>
+                    </label>
+                    <label class="modal-field" title="Index of the GPU to use for model computation (0-based). Others used for offloading.">Main GPU (-mg)
+                        <input type="number" id="modal-main-gpu" placeholder="0">
+                    </label>
+                </div>
+            </details>
+
+            <details class="modal-section">
+                <summary>Threading</summary>
+                <div class="modal-row">
+                    <label class="modal-field" title="Number of CPU threads for token generation. Leave empty to use all available CPUs.">Threads (-t)
+                        <input type="number" id="modal-threads" placeholder="auto">
+                    </label>
+                    <label class="modal-field" title="Number of CPU threads for prompt/batch processing. Leave empty to use same as threads.">Threads batch (-tb)
+                        <input type="number" id="modal-threads-batch" placeholder="auto">
+                    </label>
+                </div>
+            </details>
+
+            <details class="modal-section">
+                <summary>Rope scaling</summary>
+                <p class="help-text">Leave empty for auto-YaRN when context &gt; 262144. Set explicitly to override.</p>
+                <div class="modal-row">
+                    <label class="modal-field" title="RoPE scaling method: yarn (for extended context), linear, or none. Auto-enabled as yarn for context > 262144 if left empty.">Rope scaling
+                        <select id="modal-rope-scaling">
+                            <option value="">(auto)</option>
+                            <option value="yarn">yarn</option>
+                            <option value="linear">linear</option>
+                            <option value="none">none</option>
+                        </select>
+                    </label>
+                    <label class="modal-field" title="RoPE base frequency. Model-specific default if not set. Higher values extend context at quality cost.">Freq base
+                        <input type="number" id="modal-rope-freq-base" step="any" placeholder="model default">
+                    </label>
+                    <label class="modal-field" title="RoPE frequency scaling factor. Auto-calculated for YaRN if not set. Lower = more context extension.">Freq scale
+                        <input type="number" id="modal-rope-freq-scale" step="any" placeholder="auto">
+                    </label>
+                </div>
+            </details>
+
+            <details class="modal-section">
+                <summary>Speculative decoding</summary>
+                <div class="modal-checks">
+                    <label class="chk" title="Enable ngram-mod speculative decoding. Boosts generation speed ~47% on compatible models (pure transformers)."><input type="checkbox" id="modal-ngram-spec"> ngram-spec</label>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-field" title="N-gram size for speculative lookup table. Larger = better predictions but more memory.">N-gram size
+                        <input type="number" id="modal-spec-ngram-size" placeholder="24">
+                    </label>
+                    <label class="modal-field" title="Minimum number of tokens to draft before verification.">Draft min
+                        <input type="number" id="modal-draft-min" placeholder="8">
+                    </label>
+                    <label class="modal-field" title="Maximum number of tokens to draft per speculation step.">Draft max
+                        <input type="number" id="modal-draft-max" placeholder="24">
+                    </label>
+                </div>
+                <label class="modal-field" title="Path to a smaller draft model for model-based speculative decoding (alternative to ngram).">Draft model (-md)
+                    <input type="text" id="modal-draft-model" placeholder="/path/to/draft-model.gguf">
+                </label>
+            </details>
+
+            <details class="modal-section">
+                <summary>Advanced</summary>
+                <div class="modal-row">
+                    <label class="modal-field" title="Random seed for reproducible generation. -1 = random.">Seed (-s)
+                        <input type="number" id="modal-seed" placeholder="random">
+                    </label>
+                    <label class="modal-field" title="Path to a text file containing the system prompt.">System prompt file
+                        <input type="text" id="modal-system-prompt-file" placeholder="/path/to/system.txt">
+                    </label>
+                </div>
+                <label class="modal-field" title="Additional llama-server CLI flags (space-separated). Example: --log-verbosity 2 --no-perf">Extra args
+                    <input type="text" id="modal-extra-args" placeholder="--flag1 value1 --flag2">
+                </label>
+            </details>
+
+            </div><!-- /modal-body -->
+            <div class="modal-buttons">
+                <button type="button" class="btn" onclick="closePresetModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btn-modal-save">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/theme.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
