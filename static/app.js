@@ -1,6 +1,6 @@
 // ─── App shell: navigation + responsive drawer ────────────────────────────
 
-const SECTIONS = ['monitor', 'presets', 'bench', 'chat', 'models', 'updates'];
+const SECTIONS = ['monitor', 'presets', 'bench', 'chat', 'models'];
 let activeSection = 'monitor';
 
 function switchTab(name) {
@@ -20,7 +20,6 @@ function switchTab(name) {
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
-    if (name === 'updates') checkAppUpdates();
 
     const wasOpen = document.getElementById('sidebar').classList.contains('open');
     setNavigationOpen(false);
@@ -200,7 +199,10 @@ function modalIsOpen(id) { return document.getElementById(id).classList.contains
 
 // --- Config Modal ---
 
-function openConfigModal() { openModal('config-modal'); }
+function openConfigModal() {
+    openModal('config-modal');
+    checkAppUpdates();
+}
 function closeConfigModal() { closeModal('config-modal'); }
 
 document.getElementById('config-modal').addEventListener('click', e => {
