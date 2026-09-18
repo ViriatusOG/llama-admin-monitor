@@ -535,7 +535,7 @@ mod tests {
             "\tManufacturer: Kingston\n",
             "\tPart Number: KF556C36-16\n",
             "\tConfigured Memory Speed: 4800 MT/s\n",
-            \n",
+            "\n",
             "Handle 0x0041, DMI type 17, 92 bytes\n",
             "Memory Device\n",
             "\tSize: No Module Installed\n",
