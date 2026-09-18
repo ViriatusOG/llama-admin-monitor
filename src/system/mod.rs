@@ -273,15 +273,29 @@ mod tests {
  259       1 nvme0n1p1 10 0 3000 0 5 0 2000 0 0 0 0 0 0 0 0 0 0
    7       0 loop0 1 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 ";
-        assert_eq!(parse_diskstats(text), ((2000 + 4000) * 512, (1000 + 3000) * 512));
+        assert_eq!(
+            parse_diskstats(text),
+            ((2000 + 4000) * 512, (1000 + 3000) * 512)
+        );
     }
 
     #[test]
     fn whole_disk_names() {
-        for d in ["sda", "sdb", "vda", "xvda", "nvme0n1", "nvme1n2", "mmcblk0", "md0"] {
+        for d in [
+            "sda", "sdb", "vda", "xvda", "nvme0n1", "nvme1n2", "mmcblk0", "md0",
+        ] {
             assert!(is_whole_disk(d), "{d} should be a whole disk");
         }
-        for p in ["sda1", "nvme0n1p1", "mmcblk0p2", "loop0", "ram0", "dm-0", "sr0", "zram0"] {
+        for p in [
+            "sda1",
+            "nvme0n1p1",
+            "mmcblk0p2",
+            "loop0",
+            "ram0",
+            "dm-0",
+            "sr0",
+            "zram0",
+        ] {
             assert!(!is_whole_disk(p), "{p} should not be a whole disk");
         }
     }
