@@ -623,7 +623,7 @@ details.monitor-output-card:not([open]) > summary .details-chevron {
     width: 12px;
     height: 16px;
     border-radius: 2px;
-    background: var(--bg-deep);
+    background: var(--accent);
     border: 1px solid var(--border-subtle);
 }
 

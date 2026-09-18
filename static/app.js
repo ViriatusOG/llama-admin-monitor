@@ -1248,7 +1248,7 @@ function renderSystemCards(sys) {
     if (sys.core_percent && sys.core_percent.length > 0) {
         coresGrid.innerHTML = sys.core_percent.map(p => {
             const pct = p != null ? p : 0;
-            return '<div class="cpu-core-cell" title="' + pct.toFixed(1) + '%" style="background: color-mix(in srgb, var(--accent) ' + pct + '%, transparent)"></div>';
+            return '<div class="cpu-core-cell" title="' + pct.toFixed(1) + '%" style="opacity: ' + Math.max(0.15, pct / 100) + ';"></div>';
         }).join('');
     } else {
         coresGrid.innerHTML = '';
@@ -1271,7 +1271,7 @@ function renderSystemCards(sys) {
                 return '<span class="badge badge-dim" style="margin-right: 4px; margin-top: 4px;">' + fmtBytes(d.size_bytes) + ' ' + d.mem_type + (speed ? ' ' + speed + 'MT/s' : '') + '</span>';
             }).join('');
     } else if (sys.dimm_error) {
-        dimmHtml = '<span class="help-text">DIMM slots unavailable (' + escapeHtml(sys.dimm_error) + ')</span>';
+        dimmHtml = '<span class="help-text" title="' + escapeHtml(sys.dimm_error) + '" style="cursor: help;">DIMM slots info unavailable \u24d8</span>';
     }
     document.getElementById('sys-mem-dimm').innerHTML = dimmHtml;
 
