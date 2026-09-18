@@ -724,9 +724,9 @@ fn api_bench_run(
                     }
                 };
 
-                let batch_sizes = parse_ints("batch_sizes", default_batch);
-                let ubatch_sizes = parse_ints("ubatch_sizes", default_ubatch);
-                let thread_counts = parse_ints("threads", default_threads);
+                let batch_sizes = parse_ints("batch_sizes", default_batch as i32);
+                let ubatch_sizes = parse_ints("ubatch_sizes", default_ubatch as i32);
+                let thread_counts = parse_ints("threads", default_threads as i32);
 
                 let gpu_layers = body
                     .get("gpu_layers")
@@ -751,8 +751,16 @@ fn api_bench_run(
 
                 let progress = state.bench_progress.clone();
                 tokio::spawn(async move {
-                    bench::run_benchmark_sweep(bench_bin, model_path, splits, gpu_layers, progress)
-                        .await;
+                    bench::run_benchmark_sweep(
+                        bench_bin, 
+                        model_path, 
+                        splits, 
+                        batch_sizes, 
+                        ubatch_sizes, 
+                        thread_counts, 
+                        gpu_layers, 
+                        progress
+                    ).await;
                 });
 
                 warp::reply::json(&serde_json::json!({"ok": true}))
