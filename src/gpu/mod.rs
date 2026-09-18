@@ -19,6 +19,24 @@ pub struct GpuMetrics {
     pub mclk_mhz: u32,
 }
 
+/// Returns a map key for `name` that is not yet present in `metrics`.
+/// Two identical cards (a pair of RTX 4090s, say) share a marketing name, and
+/// keying by name alone silently drops all but one of them. The first card
+/// keeps the plain name; later duplicates get ` #2`, ` #3`, and so on.
+pub fn unique_card_key(metrics: &BTreeMap<String, GpuMetrics>, name: &str) -> String {
+    if !metrics.contains_key(name) {
+        return name.to_string();
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{name} #{n}");
+        if !metrics.contains_key(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 pub trait GpuBackend: Send + Sync + 'static {
     fn read_metrics(&self) -> Result<BTreeMap<String, GpuMetrics>>;
     #[allow(dead_code)]
@@ -167,5 +185,25 @@ mod tests {
         let metrics = multi.read_metrics().unwrap();
         assert_eq!(metrics.len(), 1);
         assert!(metrics.contains_key("GPU0 NVIDIA"));
+    }
+
+    #[test]
+    fn unique_card_key_suffixes_duplicates() {
+        let mut metrics = BTreeMap::new();
+        let zero = GpuMetrics {
+            temp: 0.0,
+            load: 0,
+            power_consumption: 0.0,
+            power_limit: 0,
+            vram_used: 0,
+            vram_total: 0,
+            sclk_mhz: 0,
+            mclk_mhz: 0,
+        };
+        assert_eq!(unique_card_key(&metrics, "RTX 4090"), "RTX 4090");
+        metrics.insert("RTX 4090".to_string(), zero.clone());
+        assert_eq!(unique_card_key(&metrics, "RTX 4090"), "RTX 4090 #2");
+        metrics.insert("RTX 4090 #2".to_string(), zero);
+        assert_eq!(unique_card_key(&metrics, "RTX 4090"), "RTX 4090 #3");
     }
 }

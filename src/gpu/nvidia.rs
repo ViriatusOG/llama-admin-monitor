@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::collections::BTreeMap;
 
-use super::{GpuBackend, GpuMetrics};
+use super::{GpuBackend, GpuMetrics, unique_card_key};
 
 pub struct NvidiaBackend;
 
@@ -54,7 +54,7 @@ pub fn parse_nvidia_csv(csv: &str) -> Result<BTreeMap<String, GpuMetrics>> {
         let sclk_mhz = fields[8].parse::<u32>().unwrap_or(0);
         let mclk_mhz = fields[9].parse::<u32>().unwrap_or(0);
 
-        let card_name = name.to_string();
+        let card_name = unique_card_key(&metrics, name);
         metrics.insert(
             card_name,
             GpuMetrics {
@@ -83,7 +83,12 @@ mod tests {
         let metrics = parse_nvidia_csv(csv).unwrap();
         assert_eq!(metrics.len(), 2);
 
-        let gpu0 = metrics.get("GPU0 NVIDIA GeForce RTX 4090").unwrap();
+        // Two identical cards must both survive: the second gets a suffix.
+        let gpu1 = metrics.get("NVIDIA GeForce RTX 4090 #2").unwrap();
+        assert_eq!(gpu1.load, 75);
+        assert_eq!(gpu1.vram_used, 16384);
+
+        let gpu0 = metrics.get("NVIDIA GeForce RTX 4090").unwrap();
         assert!((gpu0.temp - 45.0).abs() < 0.1);
         assert_eq!(gpu0.load, 87);
         assert!((gpu0.power_consumption - 320.5).abs() < 0.1);

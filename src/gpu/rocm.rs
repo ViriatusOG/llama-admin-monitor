@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::BTreeMap;
 use std::process::Command;
 
-use super::{GpuBackend, GpuMetrics};
+use super::{GpuBackend, GpuMetrics, unique_card_key};
 
 pub struct RocmBackend;
 
