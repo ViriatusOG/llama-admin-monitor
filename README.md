@@ -30,6 +30,8 @@ Same dashboard in the **Mint** light theme:
 - **Inference card** — prompt/generation speed, slot status and KV-cache occupancy (with a bar that turns amber at 80 % and red at 95 %), from llama-server's Prometheus endpoint
 - **VRAM usage card** — one segmented bar across every GPU, coloured per vendor (AMD, NVIDIA, Intel) with an estimated context/KV segment and free space, labelled in GB
 - **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together
+- **CPU, Memory and Disk cards** — host utilisation, load average, RAM and swap, disk read/write throughput and free space on the models volume (from `/proc` on Linux)
+- **Arrange the dashboard** — drag cards by their grip (or move them with the arrow keys) and hide the ones you don't need; the layout is remembered per browser
 
 ### Server management
 - **Launch from the sidebar** — pick a preset and port, Start/Stop, and open llama-server's own web UI while it runs; the button reflects live state
@@ -40,6 +42,7 @@ Same dashboard in the **Mint** light theme:
 ### Model management
 - **Models page** — every `.gguf` in your models directory with quantisation, size, VRAM fit, source repo, download date and the repo's last-updated date on Hugging Face; sortable columns
 - **Hugging Face downloads** — search repos, browse their `.gguf` files with sizes and a VRAM-fit check *before* downloading, then download with a live progress bar that keeps going if you close the dialog
+- **Companion projectors** — repos that ship an `mmproj` file offer it as a companion; it downloads right after the model, and a preset editor that is open picks both paths up. Projectors are marked on the Models page and excluded from the benchmark picker
 - **Delete** models from disk without leaving the dashboard
 
 ### Optimisation
@@ -175,7 +178,7 @@ Every colour in the UI comes from a token in `static/tokens.css`, and each theme
 
 The preset editor groups llama.cpp parameters into collapsible sections:
 
-- **Model & memory** — model path (with file browser and HF download), GPU layers, no-mmap, mlock
+- **Model & memory** — model path (with file browser and HF download), multimodal projector (`--mmproj`) for vision models, GPU layers, no-mmap, mlock
 - **Context & KV cache** — context size, K/V quantisation (`f16`/`q8_0`), flash attention
 - **Batching & slots** — batch size, micro-batch, parallel slots
 - **GPU distribution** — tensor split, backend (Vulkan/CUDA), split mode, main GPU
@@ -202,7 +205,7 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `POST` | `/api/models/delete` | Delete a model file |
 | `GET` | `/api/hf/search?q=` | Search Hugging Face for GGUF repos |
 | `GET` | `/api/hf/files?repo=` | List `.gguf` files in a repo |
-| `POST` | `/api/hf/download` | Download a file to the models directory |
+| `POST` | `/api/hf/download` | Download a file (plus an optional `companion` projector) to the models directory |
 | `POST` | `/api/bench/run` | Start a tensor-split benchmark sweep |
 | `POST` | `/api/bench/cancel` | Cancel a running sweep |
 | `GET` | `/api/settings` | Get persisted UI settings |
@@ -231,6 +234,8 @@ src/
     server.rs          -- Subprocess management, exit detection
     poller.rs          -- Async polling loop for /health, /metrics, /slots
     bench.rs           -- llama-bench sweep runner with cancellation
+  system/
+    mod.rs             -- Host CPU / memory / disk sampler (/proc, df)
   presets/
     mod.rs             -- ModelPreset, CRUD, file persistence
   models/
@@ -254,6 +259,7 @@ static/
 
 ```
 GPU (rocm-smi/nvidia-smi)  -->  GPU poller (500ms)   --> AppState
+/proc, df                  -->  System poller (2s)   --> AppState
 llama-server /metrics      -->  Llama poller (1s)    --> AppState
 HF download / benchmark    -->  Background tasks     --> AppState
                                                           |

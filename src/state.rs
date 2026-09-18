@@ -10,6 +10,7 @@ use crate::llama::server::ServerConfig;
 use crate::models::DiscoveredModel;
 use crate::models::hf::SharedDownloadProgress;
 use crate::presets::ModelPreset;
+use crate::system::SystemStats;
 
 const MAX_LOG_LINES: usize = 500;
 
@@ -85,6 +86,7 @@ pub struct AppState {
     pub ui_settings_path: PathBuf,
     pub hf_download_progress: SharedDownloadProgress,
     pub bench_progress: SharedBenchProgress,
+    pub system_stats: Arc<Mutex<SystemStats>>,
 }
 
 impl AppState {
@@ -121,6 +123,7 @@ impl AppState {
             ui_settings_path,
             hf_download_progress: Arc::new(Mutex::new(None)),
             bench_progress: Arc::new(Mutex::new(BenchProgress::default())),
+            system_stats: Arc::new(Mutex::new(SystemStats::default())),
         }
     }
 

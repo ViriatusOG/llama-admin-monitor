@@ -12,6 +12,8 @@ pub struct DiscoveredModel {
     pub quant_type: Option<String>,
     pub model_name: Option<String>,
     pub is_split: bool,
+    /// A multimodal projector (mmproj) rather than a language model.
+    pub is_mmproj: bool,
     pub hf_repo: Option<String>,
     pub downloaded_at: Option<u64>,
     pub hf_downloads: Option<u64>,
@@ -58,6 +60,7 @@ pub fn scan_models_dir(dir: &Path) -> Result<Vec<DiscoveredModel>> {
             quant_type,
             model_name,
             is_split,
+            is_mmproj: is_mmproj_filename(&filename),
             hf_repo: meta.as_ref().map(|m| m.repo.clone()),
             downloaded_at: meta.as_ref().map(|m| m.downloaded_at),
             hf_downloads: meta.as_ref().and_then(|m| m.hf_downloads),
@@ -67,6 +70,13 @@ pub fn scan_models_dir(dir: &Path) -> Result<Vec<DiscoveredModel>> {
 
     models.sort_by(|a, b| a.filename.cmp(&b.filename));
     Ok(models)
+}
+
+/// Vision projectors are conventionally named `mmproj-*.gguf` or
+/// `*-mmproj-*.gguf`; they pair with a model via `--mmproj` and cannot be
+/// launched on their own.
+pub fn is_mmproj_filename(filename: &str) -> bool {
+    filename.to_ascii_lowercase().contains("mmproj")
 }
 
 /// Parse a GGUF filename to extract model name and quantization type.
@@ -172,6 +182,13 @@ fn format_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_mmproj_filename() {
+        assert!(is_mmproj_filename("mmproj-model-f16.gguf"));
+        assert!(is_mmproj_filename("gemma-3-12b-it-MMPROJ-BF16.gguf"));
+        assert!(!is_mmproj_filename("gemma-3-12b-it-Q6_K.gguf"));
+    }
 
     #[test]
     fn test_parse_simple_filename() {

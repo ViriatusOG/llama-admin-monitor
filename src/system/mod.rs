@@ -1,0 +1,312 @@
+//! Host telemetry for the Monitor page: CPU, memory and disk. Read from
+//! `/proc` on Linux; on other platforms every reading stays "unavailable"
+//! rather than zero, so the UI can say so instead of showing 0 %.
+
+use std::path::Path;
+use std::time::Instant;
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct SystemStats {
+    /// False until the first successful sample (and always on non-Linux).
+    pub available: bool,
+    pub cpu_percent: Option<f32>,
+    pub cpu_cores: u32,
+    pub load_avg_1m: Option<f32>,
+    pub mem_total_bytes: u64,
+    pub mem_used_bytes: u64,
+    pub swap_total_bytes: u64,
+    pub swap_used_bytes: u64,
+    /// Sampled over the poll interval, summed across whole physical disks.
+    pub disk_read_bytes_per_sec: Option<f64>,
+    pub disk_write_bytes_per_sec: Option<f64>,
+    /// Free space on the filesystem holding the models directory.
+    pub disk_total_bytes: Option<u64>,
+    pub disk_free_bytes: Option<u64>,
+    pub disk_mount: String,
+    pub sample_secs: f32,
+}
+
+/// Rolling state between samples: the deltas need a previous reading.
+#[derive(Default)]
+pub struct SystemSampler {
+    prev_cpu: Option<(u64, u64)>,
+    prev_disk: Option<(u64, u64)>,
+    prev_at: Option<Instant>,
+}
+
+impl SystemSampler {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Takes one sample. `models_dir` picks the filesystem for the free-space
+    /// reading; `/` is used when it is unset.
+    pub fn sample(&mut self, models_dir: Option<&Path>) -> SystemStats {
+        let now = Instant::now();
+        let elapsed = self
+            .prev_at
+            .map(|t| now.duration_since(t).as_secs_f32())
+            .unwrap_or(0.0);
+        self.prev_at = Some(now);
+
+        let mut stats = SystemStats {
+            cpu_cores: std::thread::available_parallelism()
+                .map(|n| n.get() as u32)
+                .unwrap_or(0),
+            sample_secs: elapsed,
+            ..Default::default()
+        };
+
+        if let Ok(text) = std::fs::read_to_string("/proc/stat")
+            && let Some((idle, total)) = parse_proc_stat(&text)
+        {
+            if let Some((prev_idle, prev_total)) = self.prev_cpu {
+                let d_total = total.saturating_sub(prev_total);
+                let d_idle = idle.saturating_sub(prev_idle);
+                if d_total > 0 {
+                    stats.cpu_percent = Some((1.0 - d_idle as f32 / d_total as f32) * 100.0);
+                }
+            }
+            self.prev_cpu = Some((idle, total));
+            stats.available = true;
+        }
+
+        if let Ok(text) = std::fs::read_to_string("/proc/loadavg") {
+            stats.load_avg_1m = parse_loadavg(&text);
+        }
+
+        if let Ok(text) = std::fs::read_to_string("/proc/meminfo") {
+            let m = parse_meminfo(&text);
+            stats.mem_total_bytes = m.total;
+            stats.mem_used_bytes = m.total.saturating_sub(m.available);
+            stats.swap_total_bytes = m.swap_total;
+            stats.swap_used_bytes = m.swap_total.saturating_sub(m.swap_free);
+            stats.available = true;
+        }
+
+        if let Ok(text) = std::fs::read_to_string("/proc/diskstats") {
+            let (read_bytes, write_bytes) = parse_diskstats(&text);
+            if let Some((prev_r, prev_w)) = self.prev_disk
+                && elapsed > 0.0
+            {
+                stats.disk_read_bytes_per_sec =
+                    Some(read_bytes.saturating_sub(prev_r) as f64 / elapsed as f64);
+                stats.disk_write_bytes_per_sec =
+                    Some(write_bytes.saturating_sub(prev_w) as f64 / elapsed as f64);
+            }
+            self.prev_disk = Some((read_bytes, write_bytes));
+        }
+
+        let target = models_dir
+            .filter(|p| p.exists())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| Path::new("/").to_path_buf());
+        if let Some(space) = disk_space(&target) {
+            stats.disk_total_bytes = Some(space.total);
+            stats.disk_free_bytes = Some(space.free);
+            stats.disk_mount = space.mount;
+        }
+
+        stats
+    }
+}
+
+/// Returns (idle, total) jiffies from the aggregate `cpu` line.
+pub fn parse_proc_stat(text: &str) -> Option<(u64, u64)> {
+    let line = text.lines().find(|l| l.starts_with("cpu "))?;
+    let nums: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .filter_map(|v| v.parse().ok())
+        .collect();
+    if nums.len() < 4 {
+        return None;
+    }
+    // user nice system idle iowait irq softirq steal ...
+    let idle = nums[3] + nums.get(4).copied().unwrap_or(0);
+    let total: u64 = nums.iter().take(8).sum();
+    Some((idle, total))
+}
+
+pub fn parse_loadavg(text: &str) -> Option<f32> {
+    text.split_whitespace().next()?.parse().ok()
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct MemInfo {
+    pub total: u64,
+    pub available: u64,
+    pub swap_total: u64,
+    pub swap_free: u64,
+}
+
+/// Values in /proc/meminfo are kB; returned in bytes.
+pub fn parse_meminfo(text: &str) -> MemInfo {
+    let mut m = MemInfo::default();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let key = parts.next().unwrap_or("");
+        let kb: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let bytes = kb * 1024;
+        match key {
+            "MemTotal:" => m.total = bytes,
+            "MemAvailable:" => m.available = bytes,
+            "SwapTotal:" => m.swap_total = bytes,
+            "SwapFree:" => m.swap_free = bytes,
+            _ => {}
+        }
+    }
+    m
+}
+
+/// Sums sectors read/written across whole disks (not partitions, not
+/// loop/ram devices) and returns bytes, assuming 512-byte sectors as
+/// /proc/diskstats does regardless of the device's real sector size.
+pub fn parse_diskstats(text: &str) -> (u64, u64) {
+    let mut read = 0u64;
+    let mut write = 0u64;
+    for line in text.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 10 || !is_whole_disk(f[2]) {
+            continue;
+        }
+        read += f[5].parse::<u64>().unwrap_or(0) * 512;
+        write += f[9].parse::<u64>().unwrap_or(0) * 512;
+    }
+    (read, write)
+}
+
+/// True for device names like `sda`, `nvme0n1`, `vda`, `mmcblk0`, `md0`;
+/// false for partitions (`sda1`, `nvme0n1p2`) and virtual devices.
+pub fn is_whole_disk(name: &str) -> bool {
+    let ends_with_digit = name.ends_with(|c: char| c.is_ascii_digit());
+    if let Some(rest) = name.strip_prefix("nvme") {
+        // nvme0n1 is a disk, nvme0n1p1 a partition
+        return !rest.contains('p') && rest.contains('n');
+    }
+    if let Some(rest) = name.strip_prefix("mmcblk") {
+        return !rest.contains('p');
+    }
+    if name.starts_with("md") {
+        return !name.contains('p');
+    }
+    for prefix in ["sd", "vd", "xvd", "hd"] {
+        if let Some(rest) = name.strip_prefix(prefix) {
+            return !rest.is_empty()
+                && rest.chars().all(|c| c.is_ascii_lowercase())
+                && !ends_with_digit;
+        }
+    }
+    false
+}
+
+pub struct DiskSpace {
+    pub total: u64,
+    pub free: u64,
+    pub mount: String,
+}
+
+/// Free space via `df`, which keeps this dependency-free. Any failure (no
+/// `df`, a BSD `df` without `--output`) yields None and the card says so.
+fn disk_space(path: &Path) -> Option<DiskSpace> {
+    let output = std::process::Command::new("df")
+        .args(["-B1", "--output=size,avail,target"])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_df_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+pub fn parse_df_output(text: &str) -> Option<DiskSpace> {
+    let line = text.lines().nth(1)?;
+    let mut parts = line.split_whitespace();
+    let total = parts.next()?.parse().ok()?;
+    let free = parts.next()?.parse().ok()?;
+    let mount = parts.collect::<Vec<_>>().join(" ");
+    Some(DiskSpace { total, free, mount })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proc_stat_idle_and_total() {
+        let text = "cpu  100 5 50 800 20 0 5 0 0 0\ncpu0 50 2 25 400 10 0 2 0 0 0\n";
+        assert_eq!(parse_proc_stat(text), Some((820, 980)));
+    }
+
+    #[test]
+    fn proc_stat_missing_line() {
+        assert_eq!(parse_proc_stat("intr 1 2 3\n"), None);
+    }
+
+    #[test]
+    fn meminfo_in_bytes() {
+        let text = concat!(
+            "MemTotal:       32768 kB\n",
+            "MemFree:        1000 kB\n",
+            "MemAvailable:   16384 kB\n",
+            "SwapTotal:      2048 kB\n",
+            "SwapFree:       1024 kB\n",
+        );
+        assert_eq!(
+            parse_meminfo(text),
+            MemInfo {
+                total: 32768 * 1024,
+                available: 16384 * 1024,
+                swap_total: 2048 * 1024,
+                swap_free: 1024 * 1024,
+            }
+        );
+    }
+
+    #[test]
+    fn diskstats_sums_whole_disks_only() {
+        let text = "\
+   8       0 sda 100 0 2000 0 50 0 1000 0 0 0 0 0 0 0 0 0 0
+   8       1 sda1 100 0 1500 0 50 0 800 0 0 0 0 0 0 0 0 0 0
+ 259       0 nvme0n1 10 0 4000 0 5 0 3000 0 0 0 0 0 0 0 0 0 0
+ 259       1 nvme0n1p1 10 0 3000 0 5 0 2000 0 0 0 0 0 0 0 0 0 0
+   7       0 loop0 1 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+";
+        assert_eq!(parse_diskstats(text), ((2000 + 4000) * 512, (1000 + 3000) * 512));
+    }
+
+    #[test]
+    fn whole_disk_names() {
+        for d in ["sda", "sdb", "vda", "xvda", "nvme0n1", "nvme1n2", "mmcblk0", "md0"] {
+            assert!(is_whole_disk(d), "{d} should be a whole disk");
+        }
+        for p in ["sda1", "nvme0n1p1", "mmcblk0p2", "loop0", "ram0", "dm-0", "sr0", "zram0"] {
+            assert!(!is_whole_disk(p), "{p} should not be a whole disk");
+        }
+    }
+
+    #[test]
+    fn loadavg_first_field() {
+        assert_eq!(parse_loadavg("0.52 0.58 0.59 1/1234 5678\n"), Some(0.52));
+    }
+
+    #[test]
+    fn df_output_parsed() {
+        let text = "1B-blocks        Avail Mounted on\n1000000000000 250000000000 /home\n";
+        let d = parse_df_output(text).unwrap();
+        assert_eq!(d.total, 1_000_000_000_000);
+        assert_eq!(d.free, 250_000_000_000);
+        assert_eq!(d.mount, "/home");
+    }
+
+    #[test]
+    fn sampler_reports_cpu_only_after_two_samples() {
+        // The first sample has no baseline, so cpu_percent stays None on
+        // Linux; on other platforms it is None throughout. Either way this
+        // must not panic.
+        let mut s = SystemSampler::new();
+        let first = s.sample(None);
+        assert!(first.cpu_percent.is_none());
+    }
+}

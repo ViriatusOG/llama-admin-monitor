@@ -538,11 +538,21 @@ fn api_hf_download(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            // Optional companion projector, downloaded after the model.
+            let companion = body
+                .get("companion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if repo.is_empty() || filename.is_empty() {
                 return Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
                     "ok": false,
                     "error": "repo and filename required"
                 })));
+            }
+            let mut files = vec![filename];
+            if !companion.is_empty() {
+                files.push(companion);
             }
             let dest_dir = match state.models_dir.lock().unwrap().clone() {
                 Some(d) => d,
@@ -557,7 +567,7 @@ fn api_hf_download(
             let models_dir_state = state.models_dir.clone();
             let discovered_models = state.discovered_models.clone();
             tokio::spawn(async move {
-                hf::download_hf_file(repo, filename, dest_dir, progress).await;
+                hf::download_hf_files(repo, files, dest_dir, progress).await;
                 let dir_opt = models_dir_state.lock().unwrap().clone();
                 if let Some(dir) = dir_opt
                     && let Ok(discovered) = crate::models::scan_models_dir(&dir)

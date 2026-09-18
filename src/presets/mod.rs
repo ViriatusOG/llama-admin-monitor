@@ -7,6 +7,9 @@ pub struct ModelPreset {
     pub id: String,
     pub name: String,
     pub model_path: String,
+    /// Multimodal projector for vision models (`--mmproj`); empty when unused.
+    #[serde(default)]
+    pub mmproj: String,
     pub context_size: u64,
     pub ctk: String,
     pub ctv: String,

@@ -10,6 +10,8 @@ use crate::state::AppState;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ServerConfig {
     pub model_path: String,
+    #[serde(default)]
+    pub mmproj: String,
     pub context_size: u64,
     pub ctk: String,
     pub ctv: String,
@@ -77,6 +79,9 @@ pub async fn start_server(
     if !std::path::Path::new(&config.model_path).exists() {
         anyhow::bail!("Model file not found: {}", config.model_path);
     }
+    if !config.mmproj.is_empty() && !std::path::Path::new(&config.mmproj).exists() {
+        anyhow::bail!("Multimodal projector not found: {}", config.mmproj);
+    }
 
     // Validate server binary (skip PATH lookup for bare names like "llama-server")
     let server_path = &app_config.llama_server_path;
@@ -140,6 +145,9 @@ pub async fn start_server(
 
     // Build args — model & core
     cmd.arg("-m").arg(&config.model_path);
+    if !config.mmproj.is_empty() {
+        cmd.arg("--mmproj").arg(&config.mmproj);
+    }
     cmd.arg("-ngl")
         .arg(config.gpu_layers.unwrap_or(99).to_string());
     cmd.arg("-ctk").arg(&config.ctk);

@@ -115,15 +115,13 @@
             <form class="sidebar-launch" id="controls" onsubmit="return false;">
                 <label class="form-label" for="preset-select">Preset</label>
                 <select id="preset-select" aria-label="Model preset"></select>
-                <div class="sidebar-launch-row">
-                    <label class="sidebar-port" for="port"><span class="form-label form-label-inline">Port</span>
-                        <input id="port" type="number" value="8080" min="1" max="65535">
-                    </label>
-                    <button class="btn btn-primary sidebar-launch-btn" id="btn-toggle" type="button" onclick="doToggle()">
-                        <span class="icon icon-sm" id="btn-toggle-icon"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
-                        <span id="btn-toggle-label">Start server</span>
-                    </button>
-                </div>
+                <label class="sidebar-port" for="port"><span class="form-label form-label-inline">Port</span>
+                    <input id="port" type="number" value="8080" min="1" max="65535">
+                </label>
+                <button class="btn btn-primary sidebar-launch-btn" id="btn-toggle" type="button" onclick="doToggle()">
+                    <span class="icon icon-sm" id="btn-toggle-icon"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+                    <span id="btn-toggle-label">Start server</span>
+                </button>
                 <button class="btn btn-sm btn-open-ui hidden" type="button" onclick="openLlamaUi()">
                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
                     Open llama-server UI
@@ -192,16 +190,28 @@
             </div>
 
             <div class="monitor-section">
-                <p class="help-text monitor-scope-note">Inference readings come from llama-server's <code>/metrics</code> endpoint. GPU readings cover this machine, including other applications.</p>
-                <div class="monitor-metrics-grid">
+                <p class="help-text monitor-scope-note">Inference readings come from llama-server's <code>/metrics</code> endpoint. CPU, memory, disk and GPU readings cover this machine, including other applications. Drag the handle to reorder cards; Hide tucks a card away until you restore it.</p>
 
-                    <div class="card monitor-inference-card">
+                <details class="monitor-hidden-bar" id="monitor-hidden-controls" hidden>
+                    <summary>
+                        <span class="badge badge-neutral" id="monitor-hidden-count">1 card hidden</span>
+                        <span>Show</span>
+                    </summary>
+                    <div class="monitor-restore-list">
+                        <div id="monitor-restore-items"></div>
+                        <button class="btn btn-sm btn-ghost" type="button" onclick="showAllCards()">Show all</button>
+                    </div>
+                </details>
+
+                <div class="monitor-metrics-grid" id="monitor-card-grid">
+
+                    <div class="card monitor-inference-card" data-monitor-key="inference" data-monitor-label="Inference">
                         <div class="card-header">
                             <div>
                                 <div class="card-kicker" id="monitor-inference-kicker">Llama server</div>
                                 <div class="card-title">Inference</div>
                             </div>
-                            <span class="badge badge-dim" id="m-status">&mdash;</span>
+                            <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move Inference card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="inference" aria-label="Hide Inference card">Hide</button><span class="badge badge-dim" id="m-status">&mdash;</span></div>
                         </div>
                         <div class="monitor-inference-summary">
                             <div class="monitor-inference-stat">
@@ -224,19 +234,70 @@
                         <div class="progress-bar"><div class="progress-fill" id="m-ctx-bar"></div></div>
                     </div>
 
-                    <div class="card monitor-vram-card">
+                    <div class="card monitor-vram-card" data-monitor-key="vram" data-monitor-label="VRAM usage">
                         <div class="card-header">
                             <div>
                                 <div class="card-kicker">GPU memory</div>
                                 <div class="card-title">VRAM usage</div>
                             </div>
-                            <span class="badge badge-neutral" id="vram-total-badge">&mdash;</span>
+                            <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move VRAM usage card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="vram" aria-label="Hide VRAM usage card">Hide</button><span class="badge badge-neutral" id="vram-total-badge">&mdash;</span></div>
                         </div>
                         <div class="vram-bar-wrap"><div class="vram-bar" id="vram-bar"></div></div>
                         <div class="vram-legend" id="vram-legend"></div>
                     </div>
 
-                    <div id="gpu-cards" class="monitor-gpu-cards"></div>
+                    <div class="card monitor-system-card" data-monitor-key="system:cpu" data-monitor-label="CPU">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-kicker">System</div>
+                                <div class="card-title">CPU</div>
+                            </div>
+                            <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move CPU card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="system:cpu" aria-label="Hide CPU card">Hide</button><div class="card-icon icon-accent"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></span></div></div>
+                        </div>
+                        <div class="monitor-metric-value" id="sys-cpu-value">Not available</div>
+                        <div class="progress-bar"><div class="progress-fill" id="sys-cpu-bar"></div></div>
+                        <div class="monitor-metric-sub" id="sys-cpu-sub"></div>
+                    </div>
+
+                    <div class="card monitor-system-card" data-monitor-key="system:memory" data-monitor-label="Memory">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-kicker">System</div>
+                                <div class="card-title">Memory</div>
+                            </div>
+                            <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move Memory card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="system:memory" aria-label="Hide Memory card">Hide</button><div class="card-icon icon-magenta"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span></div></div>
+                        </div>
+                        <div class="monitor-metric-value" id="sys-mem-value">Not available</div>
+                        <div class="progress-bar"><div class="progress-fill" id="sys-mem-bar"></div></div>
+                        <div class="monitor-metric-sub" id="sys-mem-sub"></div>
+                    </div>
+
+                    <div class="card monitor-system-card" data-monitor-key="system:disk" data-monitor-label="Disk">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-kicker">System</div>
+                                <div class="card-title">Disk</div>
+                            </div>
+                            <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move Disk card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="system:disk" aria-label="Hide Disk card">Hide</button><div class="card-icon icon-cyan"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg></span></div></div>
+                        </div>
+                        <div class="monitor-io-grid">
+                            <div class="monitor-io-cell">
+                                <span class="monitor-io-label">Read</span>
+                                <span class="monitor-io-value" id="sys-disk-read">&mdash;</span>
+                            </div>
+                            <div class="monitor-io-cell">
+                                <span class="monitor-io-label">Write</span>
+                                <span class="monitor-io-value" id="sys-disk-write">&mdash;</span>
+                            </div>
+                        </div>
+                        <div class="monitor-metric-row monitor-disk-space-row">
+                            <span class="monitor-metric-label" id="sys-disk-mount">Free</span>
+                            <span class="monitor-metric-reading" id="sys-disk-space">&mdash;</span>
+                        </div>
+                        <div class="progress-bar"><div class="progress-fill" id="sys-disk-bar"></div></div>
+                        <div class="monitor-metric-sub" id="sys-disk-sub"></div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -467,6 +528,11 @@
         <div id="hf-repo-header" class="fb-header">
             <span>Model</span><span>Downloads</span>
         </div>
+        <div id="hf-companion-bar" class="hf-companion-bar hidden">
+            <label class="form-label form-label-inline" for="hf-companion-select">Companion mmproj</label>
+            <select id="hf-companion-select"><option value="">None</option></select>
+            <span class="help-text">Vision models need their projector; pick one and it downloads right after the model.</span>
+        </div>
         <div id="hf-file-header" class="fb-header hidden">
             <span>File (click to download)</span><span>Fits VRAM?</span><span>Size</span>
         </div>
@@ -528,6 +594,13 @@
                         <button type="button" class="btn btn-sm" onclick="openHfModal()" title="Search and download a model from Hugging Face">Hugging Face<span id="hf-badge" class="hf-badge hidden"></span></button>
                     </div>
                     <span class="field-error-msg">Model path is required</span>
+                </label>
+                <label class="modal-field" title="Multimodal projector for vision models (--mmproj). Leave empty for text-only models. Downloading a model with a companion projector fills this in.">Multimodal projector (--mmproj)
+                    <div class="input-row">
+                        <input type="text" id="modal-mmproj" placeholder="none (text-only model)">
+                        <button type="button" class="btn btn-sm" onclick="openFileBrowser('modal-mmproj','gguf')" title="Browse filesystem for an mmproj .gguf">Browse</button>
+                        <button type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('modal-mmproj').value=''" title="Clear">Clear</button>
+                    </div>
                 </label>
                 <div class="modal-row">
                     <label class="modal-field" title="Number of layers to offload to GPU. 99 = all layers. Lower values keep some layers on CPU to save VRAM.">GPU layers (-ngl)

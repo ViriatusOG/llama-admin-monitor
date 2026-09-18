@@ -20,14 +20,22 @@ pub struct HfFile {
     pub filename: String,
     pub size_bytes: u64,
     pub size_display: String,
+    pub is_mmproj: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct DownloadProgress {
     pub repo: String,
+    /// The file currently transferring.
     pub filename: String,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
+    /// 1-based position of `filename` in the job, and the job's length,
+    /// so the UI can show "2 / 2" when a companion projector follows.
+    pub file_index: usize,
+    pub file_count: usize,
+    /// Final on-disk paths of the files completed so far.
+    pub completed_paths: Vec<String>,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -149,6 +157,7 @@ pub async fn list_hf_gguf_files(repo_id: &str) -> Result<Vec<HfFile>> {
                 .filter(|&s| s > 0)
                 .unwrap_or(e.size);
             HfFile {
+                is_mmproj: crate::models::is_mmproj_filename(&e.path),
                 filename: e.path,
                 size_bytes: size,
                 size_display: format_size(size),
@@ -160,87 +169,50 @@ pub async fn list_hf_gguf_files(repo_id: &str) -> Result<Vec<HfFile>> {
     Ok(files)
 }
 
-pub async fn download_hf_file(
+/// Downloads `filenames` from `repo_id` one after another into `dest_dir`,
+/// reporting through `progress`. A model and its companion mmproj travel as
+/// one job so the UI shows a single download and the projector lands beside
+/// its model. Stops at the first failure.
+pub async fn download_hf_files(
     repo_id: String,
-    filename: String,
+    filenames: Vec<String>,
     dest_dir: PathBuf,
     progress: SharedDownloadProgress,
 ) {
-    use tokio::io::AsyncWriteExt;
-
     let repo_info = get_hf_repo_info(&repo_id).await.unwrap_or_default();
+    let file_count = filenames.len();
 
     {
         let mut p = progress.lock().unwrap();
         *p = Some(DownloadProgress {
             repo: repo_id.clone(),
-            filename: filename.clone(),
-            downloaded_bytes: 0,
-            total_bytes: 0,
-            done: false,
-            error: None,
+            filename: filenames.first().cloned().unwrap_or_default(),
+            file_index: 1,
+            file_count,
+            ..Default::default()
         });
     }
 
-    let result: Result<()> = async {
-        let url = format!("{HF_API_BASE}/{repo_id}/resolve/main/{filename}?download=true");
-        let client = reqwest::Client::new();
-        let resp = client
-            .get(&url)
-            .header("User-Agent", "llama-admin-monitor")
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let total = resp.content_length().unwrap_or(0);
+    let mut result: Result<()> = Ok(());
+    for (i, filename) in filenames.iter().enumerate() {
         if let Some(p) = progress.lock().unwrap().as_mut() {
-            p.total_bytes = total;
+            p.filename = filename.clone();
+            p.file_index = i + 1;
+            p.downloaded_bytes = 0;
+            p.total_bytes = 0;
         }
-
-        // Use only the final path component on disk, in case the repo
-        // nests gguf files under a subfolder.
-        let out_name = std::path::Path::new(&filename)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| filename.clone());
-        let tmp_path = dest_dir.join(format!("{out_name}.part"));
-        let final_path = dest_dir.join(&out_name);
-
-        let mut file = tokio::fs::File::create(&tmp_path).await?;
-        let mut stream = resp.bytes_stream();
-        let mut downloaded: u64 = 0;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            downloaded += chunk.len() as u64;
-            if let Some(p) = progress.lock().unwrap().as_mut() {
-                p.downloaded_bytes = downloaded;
+        match download_one(&repo_id, filename, &dest_dir, &progress, &repo_info).await {
+            Ok(path) => {
+                if let Some(p) = progress.lock().unwrap().as_mut() {
+                    p.completed_paths.push(path.display().to_string());
+                }
+            }
+            Err(e) => {
+                result = Err(e);
+                break;
             }
         }
-        file.flush().await?;
-        drop(file);
-
-        tokio::fs::rename(&tmp_path, &final_path).await?;
-
-        let meta = ModelMetadata {
-            repo: repo_id.clone(),
-            filename: out_name.clone(),
-            downloaded_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
-            hf_downloads: Some(repo_info.downloads),
-            hf_last_modified: repo_info.last_modified.clone(),
-        };
-        let meta_path = dest_dir.join(format!("{out_name}.meta.json"));
-        if let Ok(json) = serde_json::to_string_pretty(&meta) {
-            let _ = tokio::fs::write(&meta_path, json).await;
-        }
-
-        Ok(())
     }
-    .await;
 
     if let Some(p) = progress.lock().unwrap().as_mut() {
         p.done = true;
@@ -248,6 +220,75 @@ pub async fn download_hf_file(
             p.error = Some(e.to_string());
         }
     }
+}
+
+/// Fetches one file to `dest_dir`, writing a `.meta.json` sidecar, and
+/// returns the final path.
+async fn download_one(
+    repo_id: &str,
+    filename: &str,
+    dest_dir: &std::path::Path,
+    progress: &SharedDownloadProgress,
+    repo_info: &HfRepoInfo,
+) -> Result<PathBuf> {
+    use tokio::io::AsyncWriteExt;
+
+    let url = format!("{HF_API_BASE}/{repo_id}/resolve/main/{filename}?download=true");
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "llama-admin-monitor")
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let total = resp.content_length().unwrap_or(0);
+    if let Some(p) = progress.lock().unwrap().as_mut() {
+        p.total_bytes = total;
+    }
+
+    // Use only the final path component on disk, in case the repo
+    // nests gguf files under a subfolder.
+    let out_name = std::path::Path::new(filename)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| filename.to_string());
+    let tmp_path = dest_dir.join(format!("{out_name}.part"));
+    let final_path = dest_dir.join(&out_name);
+
+    let mut file = tokio::fs::File::create(&tmp_path).await?;
+    let mut stream = resp.bytes_stream();
+    let mut downloaded: u64 = 0;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        file.write_all(&chunk).await?;
+        downloaded += chunk.len() as u64;
+        if let Some(p) = progress.lock().unwrap().as_mut() {
+            p.downloaded_bytes = downloaded;
+        }
+    }
+    file.flush().await?;
+    drop(file);
+
+    tokio::fs::rename(&tmp_path, &final_path).await?;
+
+    let meta = ModelMetadata {
+        repo: repo_id.to_string(),
+        filename: out_name.clone(),
+        downloaded_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        hf_downloads: Some(repo_info.downloads),
+        hf_last_modified: repo_info.last_modified.clone(),
+    };
+    let meta_path = dest_dir.join(format!("{out_name}.meta.json"));
+    if let Ok(json) = serde_json::to_string_pretty(&meta) {
+        let _ = tokio::fs::write(&meta_path, json).await;
+    }
+
+    Ok(final_path)
 }
 
 fn format_size(bytes: u64) -> String {

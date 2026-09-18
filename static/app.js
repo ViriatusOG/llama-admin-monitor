@@ -377,7 +377,7 @@ async function populateBenchModels() {
         sel.innerHTML = '<option value="">No models found -- download one first</option>';
         return;
     }
-    sel.innerHTML = allModelsCache.map(m =>
+    sel.innerHTML = allModelsCache.filter(m => !m.is_mmproj).map(m =>
         '<option value="' + escapeHtml(m.path) + '">' + escapeHtml(m.model_name || m.filename) +
         (m.quant_type ? ' (' + escapeHtml(m.quant_type) + ')' : '') + ' \u2014 ' + escapeHtml(m.size_display) + '</option>'
     ).join('');
@@ -578,6 +578,7 @@ document.getElementById('hf-modal').addEventListener('click', e => {
 });
 
 function hfShowRepos() {
+    document.getElementById('hf-companion-bar').classList.add('hidden');
     document.getElementById('hf-repo-list').classList.remove('hidden');
     document.getElementById('hf-file-list').classList.add('hidden');
     document.getElementById('hf-repo-header').classList.remove('hidden');
@@ -670,6 +671,7 @@ async function hfShowFiles(repoId) {
             return;
         }
         hfFileData = data.files;
+        renderHfCompanionBar();
         renderHfFiles();
     } catch (err) {
         fileListEl.innerHTML = '<div class="fb-empty">Error: ' + escapeHtml(err.message) + '</div>';
@@ -677,6 +679,27 @@ async function hfShowFiles(repoId) {
 }
 
 let hfFileData = [];
+
+// Offers the repo's projector files as a companion for whichever model the
+// user picks. Only shown when the repo actually ships one.
+function renderHfCompanionBar() {
+    const bar = document.getElementById('hf-companion-bar');
+    const sel = document.getElementById('hf-companion-select');
+    const projectors = hfFileData.filter(f => f.is_mmproj);
+    if (projectors.length === 0) {
+        bar.classList.add('hidden');
+        sel.innerHTML = '<option value="">None</option>';
+        return;
+    }
+    sel.innerHTML = '<option value="">None</option>' + projectors.map(f =>
+        '<option value="' + escapeHtml(f.filename) + '">' + escapeHtml(f.filename) + ' (' + escapeHtml(f.size_display) + ')</option>').join('');
+    // Preselect the smallest projector: it is the usual pairing and the
+    // choice is one click away if a bigger one is wanted.
+    const smallest = projectors.slice().sort((a, b) => a.size_bytes - b.size_bytes)[0];
+    sel.value = smallest.filename;
+    bar.classList.remove('hidden');
+}
+
 let hfFileSortKey = 'filename';
 let hfFileSortDir = 'asc';
 
@@ -719,20 +742,25 @@ function renderHfFiles() {
     });
     fileListEl.innerHTML = sorted.map(f => {
         const fit = vramFitCheck(f.size_bytes);
-        return '<div class="fb-entry fb-entry-file fb-match" onclick="hfDownload(\'' + jsStr(f.filename) + '\', \'' + jsStr(f.size_display) + '\')">' +
-            '<span class="fb-entry-icon">\u{1F4C4}</span>' +
-            '<span class="fb-entry-name">' + escapeHtml(f.filename) + '</span>' +
+        return '<div class="fb-entry fb-entry-file fb-match" onclick="hfDownload(\'' + jsStr(f.filename) + '\', \'' + jsStr(f.size_display) + '\', ' + (f.is_mmproj ? 'true' : 'false') + ')">' +
+            '<span class="fb-entry-icon">' + (f.is_mmproj ? '\u{1F5BC}' : '\u{1F4C4}') + '</span>' +
+            '<span class="fb-entry-name">' + escapeHtml(f.filename) + (f.is_mmproj ? ' <span class="chip-projector">projector</span>' : '') + '</span>' +
             '<span class="fb-entry-size ' + fit.cls + '" title="' + escapeHtml(fit.title) + '">' + fit.label + '</span>' +
             '<span class="fb-entry-size">' + escapeHtml(f.size_display) + '</span></div>';
     }).join('');
 }
 
-async function hfDownload(filename, sizeDisplay) {
+async function hfDownload(filename, sizeDisplay, isProjector) {
     if (hfDownloading) {
         showToast('A download is already in progress', 'error');
         return;
     }
-    const proceed = await showConfirm('Download model', 'Download ' + filename + ' (' + (sizeDisplay || 'unknown size') + ') to your models directory?', 'Download');
+    // A projector clicked directly downloads alone; a model brings the
+    // selected companion along.
+    const companion = isProjector ? '' : (document.getElementById('hf-companion-select').value || '');
+    let message = 'Download ' + filename + ' (' + (sizeDisplay || 'unknown size') + ') to your models directory?';
+    if (companion) message += '\n\nThe companion projector ' + companion + ' will be downloaded right after it.';
+    const proceed = await showConfirm(isProjector ? 'Download projector' : 'Download model', message, 'Download');
     if (!proceed) {
         return;
     }
@@ -746,7 +774,7 @@ async function hfDownload(filename, sizeDisplay) {
         const resp = await fetch('/api/hf/download', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ repo: hfCurrentRepo, filename: filename }),
+            body: JSON.stringify({ repo: hfCurrentRepo, filename: filename, companion: companion }),
         });
         const data = await resp.json();
         if (!data.ok) {
@@ -917,12 +945,22 @@ function barClass(pct) {
     return 'progress-fill';
 }
 
+function cardTools(key, label) {
+    return '<div class="monitor-card-tools">' +
+        '<button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move ' + escapeHtml(label) + ' card; use arrow keys">\u283f</button>' +
+        '<button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="' + escapeHtml(key) + '" aria-label="Hide ' + escapeHtml(label) + ' card">Hide</button>';
+}
+
 function renderGpuCards(gpuList) {
-    const host = document.getElementById('gpu-cards');
-    if (!host) return;
+    const grid = document.getElementById('monitor-card-grid');
+    if (!grid) return;
     if (gpuList.length === 0) {
         if (lastGpuCount !== 0) {
-            host.innerHTML = '<div class="card monitor-empty"><div class="empty-state"><div class="empty-state-title">No GPU telemetry</div><p>Install rocm-smi (AMD) or nvidia-smi (NVIDIA), or force a backend with --gpu-backend.</p></div></div>';
+            grid.querySelectorAll('.monitor-gpu-card, .monitor-empty').forEach(el => el.remove());
+            const empty = document.createElement('div');
+            empty.className = 'card monitor-empty';
+            empty.innerHTML = '<div class="empty-state"><div class="empty-state-title">No GPU telemetry</div><p>Install rocm-smi (AMD) or nvidia-smi (NVIDIA), or force a backend with --gpu-backend.</p></div>';
+            grid.appendChild(empty);
             lastGpuCount = 0;
         }
         return;
@@ -930,13 +968,15 @@ function renderGpuCards(gpuList) {
     // Rebuild the DOM only when the device list changes; otherwise update
     // values in place so hover states and text selection survive each tick.
     if (lastGpuCount !== gpuList.length) {
-        host.innerHTML = gpuList.map(([card], i) => {
+        grid.querySelectorAll('.monitor-gpu-card, .monitor-empty').forEach(el => el.remove());
+        grid.insertAdjacentHTML('beforeend', gpuList.map(([card], i) => {
             const vendor = vendorInfo(card);
-            return '<div class="card monitor-gpu-card" data-gpu-index="' + i + '">' +
+            return '<div class="card monitor-gpu-card" data-gpu-index="' + i + '" data-monitor-key="gpu:' + i + '" data-monitor-label="GPU ' + i + '">' +
                 '<div class="card-header">' +
                     '<div><div class="card-kicker">GPU ' + i + ' \u00b7 ' + escapeHtml(vendor.label) + '</div>' +
                     '<div class="card-title gpu-name">' + escapeHtml(card) + '</div></div>' +
-                    '<div class="card-icon icon-' + vendor.key + '"><span class="icon icon-lg">' + GPU_ICON + '</span></div>' +
+                    cardTools('gpu:' + i, 'GPU ' + i) +
+                    '<div class="card-icon icon-' + vendor.key + '"><span class="icon icon-lg">' + GPU_ICON + '</span></div></div>' +
                 '</div>' +
                 '<div class="monitor-metric-block">' +
                     '<div class="monitor-metric-row"><span class="monitor-metric-label">Utilization</span><span class="monitor-metric-reading gpu-load">\u2014</span></div>' +
@@ -953,12 +993,13 @@ function renderGpuCards(gpuList) {
                     '<div class="monitor-metric-row"><span class="monitor-metric-label">Memory clock</span><span class="monitor-metric-reading gpu-mclk">\u2014</span></div>' +
                 '</div>' +
             '</div>';
-        }).join('');
+        }).join(''));
         lastGpuCount = gpuList.length;
+        applyCardLayout();
     }
 
     gpuList.forEach(([card, m], i) => {
-        const el = host.querySelector('[data-gpu-index="' + i + '"]');
+        const el = grid.querySelector('[data-gpu-index="' + i + '"]');
         if (!el) return;
         const nameEl = el.querySelector('.gpu-name');
         if (nameEl.textContent !== card) {
@@ -993,6 +1034,237 @@ function renderGpuCards(gpuList) {
         el.querySelector('.gpu-sclk').textContent = m.sclk_mhz + ' MHz';
         el.querySelector('.gpu-mclk').textContent = m.mclk_mhz + ' MHz';
     });
+}
+
+// --- Monitor card layout (order + hidden), remembered per browser ---
+
+const CARD_LAYOUT_KEY = 'llama_admin_monitor_cards';
+let cardLayout = { order: [], hidden: [] };
+try {
+    const stored = JSON.parse(localStorage.getItem(CARD_LAYOUT_KEY) || '{}');
+    if (Array.isArray(stored.order)) cardLayout.order = stored.order.filter(k => typeof k === 'string');
+    if (Array.isArray(stored.hidden)) cardLayout.hidden = stored.hidden.filter(k => typeof k === 'string');
+} catch (_) {}
+
+function saveCardLayout() {
+    try { localStorage.setItem(CARD_LAYOUT_KEY, JSON.stringify(cardLayout)); } catch (_) {}
+}
+
+function monitorCards() {
+    return Array.from(document.querySelectorAll('#monitor-card-grid > .card[data-monitor-key]'));
+}
+
+// Reorders the grid to the saved order (unknown cards keep their DOM order
+// at the end) and applies the hidden set, then rebuilds the restore bar.
+function applyCardLayout() {
+    const grid = document.getElementById('monitor-card-grid');
+    if (!grid) return;
+    const cards = monitorCards();
+    const byKey = new Map(cards.map(c => [c.dataset.monitorKey, c]));
+    const ordered = [];
+    cardLayout.order.forEach(k => { if (byKey.has(k)) { ordered.push(byKey.get(k)); byKey.delete(k); } });
+    byKey.forEach(c => ordered.push(c));
+    ordered.forEach(c => grid.appendChild(c));
+    cards.forEach(c => c.classList.toggle('card-hidden', cardLayout.hidden.includes(c.dataset.monitorKey)));
+    renderHiddenBar();
+}
+
+function renderHiddenBar() {
+    const bar = document.getElementById('monitor-hidden-controls');
+    if (!bar) return;
+    const hiddenCards = monitorCards().filter(c => cardLayout.hidden.includes(c.dataset.monitorKey));
+    bar.hidden = hiddenCards.length === 0;
+    document.getElementById('monitor-hidden-count').textContent =
+        hiddenCards.length + (hiddenCards.length === 1 ? ' card hidden' : ' cards hidden');
+    document.getElementById('monitor-restore-items').innerHTML = hiddenCards.map(c =>
+        '<div class="monitor-restore-row"><span>' + escapeHtml(c.dataset.monitorLabel || c.dataset.monitorKey) + '</span>' +
+        '<button class="btn btn-sm" type="button" onclick="showCard(\'' + jsStr(c.dataset.monitorKey) + '\')">Show</button></div>'
+    ).join('');
+}
+
+function hideCard(key) {
+    if (!cardLayout.hidden.includes(key)) cardLayout.hidden.push(key);
+    saveCardLayout();
+    applyCardLayout();
+}
+
+function showCard(key) {
+    cardLayout.hidden = cardLayout.hidden.filter(k => k !== key);
+    saveCardLayout();
+    applyCardLayout();
+}
+
+function showAllCards() {
+    cardLayout.hidden = [];
+    saveCardLayout();
+    applyCardLayout();
+}
+
+function commitCardOrder() {
+    cardLayout.order = monitorCards().map(c => c.dataset.monitorKey);
+    saveCardLayout();
+    renderHiddenBar();
+}
+
+function moveCard(card, delta) {
+    const visible = monitorCards().filter(c => !c.classList.contains('card-hidden'));
+    const i = visible.indexOf(card);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= visible.length) return;
+    const grid = document.getElementById('monitor-card-grid');
+    if (delta < 0) grid.insertBefore(card, visible[j]);
+    else grid.insertBefore(card, visible[j].nextSibling);
+    commitCardOrder();
+    card.querySelector('.monitor-drag-handle').focus();
+}
+
+(function initCardDragging() {
+    const grid = document.getElementById('monitor-card-grid');
+    if (!grid) return;
+    let dragging = null;
+
+    grid.addEventListener('click', e => {
+        const hide = e.target.closest('[data-monitor-hide]');
+        if (hide) hideCard(hide.dataset.monitorHide);
+    });
+
+    grid.addEventListener('keydown', e => {
+        if (!e.target.classList.contains('monitor-drag-handle')) return;
+        const card = e.target.closest('.card');
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); moveCard(card, -1); }
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); moveCard(card, 1); }
+    });
+
+    grid.addEventListener('dragstart', e => {
+        const handle = e.target.closest('.monitor-drag-handle');
+        if (!handle) { e.preventDefault(); return; }
+        dragging = handle.closest('.card');
+        dragging.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', dragging.dataset.monitorKey); } catch (_) {}
+        try { e.dataTransfer.setDragImage(dragging, 24, 24); } catch (_) {}
+    });
+
+    const clearMarkers = () => grid.querySelectorAll('.drop-before, .drop-after').forEach(c => c.classList.remove('drop-before', 'drop-after'));
+
+    grid.addEventListener('dragover', e => {
+        if (!dragging) return;
+        const target = e.target.closest('.card');
+        if (!target || target === dragging) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const r = target.getBoundingClientRect();
+        const before = e.clientX < r.left + r.width / 2;
+        clearMarkers();
+        target.classList.add(before ? 'drop-before' : 'drop-after');
+    });
+
+    grid.addEventListener('dragleave', e => {
+        if (!grid.contains(e.relatedTarget)) clearMarkers();
+    });
+
+    grid.addEventListener('drop', e => {
+        if (!dragging) return;
+        const target = e.target.closest('.card');
+        if (!target || target === dragging) return;
+        e.preventDefault();
+        const r = target.getBoundingClientRect();
+        const before = e.clientX < r.left + r.width / 2;
+        grid.insertBefore(dragging, before ? target : target.nextSibling);
+        commitCardOrder();
+    });
+
+    grid.addEventListener('dragend', () => {
+        if (dragging) dragging.classList.remove('dragging');
+        dragging = null;
+        clearMarkers();
+    });
+})();
+applyCardLayout();
+
+// --- System cards (CPU / memory / disk) ---
+
+function fmtBytes(b) {
+    if (b == null) return '\u2014';
+    if (b >= 1024 ** 4) return (b / 1024 ** 4).toFixed(2) + ' TB';
+    if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(1) + ' GB';
+    if (b >= 1024 ** 2) return (b / 1024 ** 2).toFixed(0) + ' MB';
+    if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+    return b.toFixed(0) + ' B';
+}
+
+function fmtRate(bps) {
+    if (bps == null) return '\u2014';
+    if (bps >= 1024 ** 3) return (bps / 1024 ** 3).toFixed(2) + ' GB/s';
+    if (bps >= 1024 ** 2) return (bps / 1024 ** 2).toFixed(1) + ' MB/s';
+    if (bps >= 1024) return (bps / 1024).toFixed(0) + ' KB/s';
+    return bps.toFixed(0) + ' B/s';
+}
+
+function setMetricValue(id, value, unit) {
+    const el = document.getElementById(id);
+    if (value == null) {
+        el.className = 'monitor-metric-value monitor-not-available';
+        el.textContent = 'Not available';
+        return;
+    }
+    el.className = 'monitor-metric-value';
+    el.innerHTML = escapeHtml(value) + (unit ? '<span class="monitor-metric-unit">' + unit + '</span>' : '');
+}
+
+function setBar(id, pct) {
+    const bar = document.getElementById(id);
+    const p = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+    bar.style.width = p.toFixed(1) + '%';
+    bar.className = barClass(p);
+}
+
+function renderSystemCards(sys) {
+    if (!sys || !sys.available) {
+        setMetricValue('sys-cpu-value', null);
+        setMetricValue('sys-mem-value', null);
+        setBar('sys-cpu-bar', null);
+        setBar('sys-mem-bar', null);
+        document.getElementById('sys-cpu-sub').textContent = 'Host telemetry needs /proc (Linux).';
+        document.getElementById('sys-mem-sub').textContent = '';
+        document.getElementById('sys-disk-read').textContent = '\u2014';
+        document.getElementById('sys-disk-write').textContent = '\u2014';
+        document.getElementById('sys-disk-space').textContent = '\u2014';
+        document.getElementById('sys-disk-sub').textContent = 'Host telemetry needs /proc (Linux).';
+        return;
+    }
+
+    // CPU
+    setMetricValue('sys-cpu-value', sys.cpu_percent == null ? null : sys.cpu_percent.toFixed(1), '%');
+    setBar('sys-cpu-bar', sys.cpu_percent);
+    const cpuBits = [];
+    if (sys.cpu_cores) cpuBits.push(sys.cpu_cores + ' cores');
+    if (sys.load_avg_1m != null) cpuBits.push('load ' + sys.load_avg_1m.toFixed(2));
+    if (sys.sample_secs) cpuBits.push(sys.sample_secs.toFixed(1) + ' s sample');
+    document.getElementById('sys-cpu-sub').textContent = cpuBits.join(' \u00b7 ');
+
+    // Memory
+    const memPct = sys.mem_total_bytes > 0 ? (sys.mem_used_bytes / sys.mem_total_bytes) * 100 : null;
+    setMetricValue('sys-mem-value', memPct == null ? null : memPct.toFixed(1), '%');
+    setBar('sys-mem-bar', memPct);
+    let memSub = fmtBytes(sys.mem_used_bytes) + ' used of ' + fmtBytes(sys.mem_total_bytes);
+    if (sys.swap_total_bytes > 0) memSub += ' \u00b7 swap ' + fmtBytes(sys.swap_used_bytes) + ' / ' + fmtBytes(sys.swap_total_bytes);
+    document.getElementById('sys-mem-sub').textContent = memSub;
+
+    // Disk
+    document.getElementById('sys-disk-read').textContent = fmtRate(sys.disk_read_bytes_per_sec);
+    document.getElementById('sys-disk-write').textContent = fmtRate(sys.disk_write_bytes_per_sec);
+    if (sys.disk_total_bytes != null && sys.disk_free_bytes != null && sys.disk_total_bytes > 0) {
+        const used = sys.disk_total_bytes - sys.disk_free_bytes;
+        const pct = (used / sys.disk_total_bytes) * 100;
+        document.getElementById('sys-disk-mount').textContent = 'Free' + (sys.disk_mount ? ' \u00b7 ' + sys.disk_mount : '');
+        document.getElementById('sys-disk-space').textContent = fmtBytes(sys.disk_free_bytes) + ' of ' + fmtBytes(sys.disk_total_bytes);
+        setBar('sys-disk-bar', pct);
+    } else {
+        document.getElementById('sys-disk-space').textContent = '\u2014';
+        setBar('sys-disk-bar', null);
+    }
+    document.getElementById('sys-disk-sub').textContent = 'All physical disks \u00b7 includes other applications';
 }
 
 // --- Sorting ---
@@ -1106,7 +1378,7 @@ function renderModelsTab() {
                 : '\u2014';
             const fit = vramFitCheck(m.size_bytes);
             return '<div class="model-grid-row">' +
-                '<span class="model-name" title="' + escapeHtml(m.filename) + '">\u{1F4C4} ' + escapeHtml(m.model_name || m.filename) + '</span>' +
+                '<span class="model-name" title="' + escapeHtml(m.filename) + '">\u{1F4C4} ' + escapeHtml(m.model_name || m.filename) + (m.is_mmproj ? ' <span class="chip-projector" title="Multimodal projector: pair it with a model via --mmproj">projector</span>' : '') + '</span>' +
                 '<span class="model-cell">' + escapeHtml(m.quant_type || '\u2014') + '</span>' +
                 '<span class="model-cell">' + escapeHtml(m.size_display) + '</span>' +
                 '<span class="model-cell ' + fit.cls + '" title="' + escapeHtml(fit.title) + '">' + fit.label + '</span>' +
@@ -1170,24 +1442,42 @@ function updateHfProgress(p) {
         if (p.error) {
             showToast('Download failed: ' + p.error, 'error');
         } else {
-            showToast('Downloaded: ' + p.filename, 'success');
+            const n = (p.completed_paths || []).length;
+            showToast(n > 1 ? 'Downloaded ' + n + ' files: ' + p.filename + ' and companion' : 'Downloaded: ' + p.filename, 'success');
             refreshModels();
+            fillPresetFromDownload(p.completed_paths || []);
         }
         return;
     }
     if (p.total_bytes > 0) {
         const pct = ((p.downloaded_bytes / p.total_bytes) * 100).toFixed(1);
+        const seq = p.file_count > 1 ? ' (' + p.file_index + '/' + p.file_count + ')' : '';
+        document.getElementById('hf-progress-filename').textContent = p.filename + seq;
         document.getElementById('hf-progress-pct').textContent = pct + '%';
         document.getElementById('hf-progress-bar').style.width = pct + '%';
         badge.classList.remove('hidden');
-        badge.textContent = '(' + pct + '%)';
+        badge.textContent = '(' + pct + '%' + seq + ')';
 
         const banner = document.getElementById('models-hf-banner');
         banner.hidden = false;
-        document.getElementById('models-hf-banner-name').textContent = 'Downloading: ' + p.filename;
+        document.getElementById('models-hf-banner-name').textContent = 'Downloading: ' + p.filename + seq;
         document.getElementById('models-hf-banner-pct').textContent = pct + '%';
         document.getElementById('models-hf-banner-bar').style.width = pct + '%';
     }
+}
+
+// When the download was started from the preset editor, point the editor
+// at what just arrived: the model path if it is still empty, and the
+// projector whenever one came along.
+function fillPresetFromDownload(paths) {
+    if (!modalIsOpen('preset-modal') || paths.length === 0) return;
+    const isProj = path => /mmproj/i.test(path.split('/').pop() || '');
+    const model = paths.find(p => !isProj(p));
+    const proj = paths.find(isProj);
+    const modelField = document.getElementById('modal-model-path');
+    if (model && !modelField.value.trim()) modelField.value = model;
+    if (proj) document.getElementById('modal-mmproj').value = proj;
+    if (model || proj) showToast('Preset editor updated with the downloaded file' + (model && proj ? 's' : ''), 'success');
 }
 
 // --- Escape closes the topmost open modal ---
@@ -1255,6 +1545,7 @@ function presetChips(p) {
     if (p.flash_attn) chips.push('fa ' + p.flash_attn);
     if (p.parallel_slots > 1) chips.push('np ' + p.parallel_slots);
     if (p.ngram_spec) chips.push('ngram-spec');
+    if (p.mmproj) chips.push('mmproj');
     return chips.map(c => '<span class="preset-chip">' + escapeHtml(c) + '</span>').join('');
 }
 
@@ -1326,6 +1617,7 @@ function openPresetModal(mode, id) {
         // Model & Memory
         setVal('modal-name', p.name);
         setVal('modal-model-path', p.model_path);
+        setVal('modal-mmproj', p.mmproj);
         numOrEmpty('modal-gpu-layers', p.gpu_layers);
         setChk('modal-no-mmap', p.no_mmap);
         setChk('modal-mlock', p.mlock);
@@ -1399,6 +1691,7 @@ async function savePreset(event) {
         // Model & Memory
         name: strVal('modal-name'),
         model_path: strVal('modal-model-path'),
+        mmproj: strVal('modal-mmproj'),
         gpu_layers: intOrNull('modal-gpu-layers'),
         no_mmap: document.getElementById('modal-no-mmap').checked,
         mlock: document.getElementById('modal-mlock').checked,
@@ -1573,6 +1866,7 @@ function getConfig() {
     const p = presets.find(pr => pr.id === id) || {};
     return {
         model_path: p.model_path || '',
+        mmproj: p.mmproj || '',
         context_size: p.context_size || 128000,
         ctk: p.ctk || 'q8_0',
         ctv: p.ctv || 'f16',
@@ -1771,7 +2065,7 @@ ws.onmessage = e => {
         document.getElementById('m-ctx').textContent = '\u2014';
         ctxBar.style.width = '0%';
     }
-    document.getElementById('m-slots').textContent = l.slots_idle + l.slots_processing > 0 ? l.slots_idle + ' idle / ' + l.slots_processing + ' busy' : '\u2014';
+    document.getElementById('m-slots').textContent = l.slots_idle + l.slots_processing > 0 ? l.slots_idle + ' idle \u00b7 ' + l.slots_processing + ' busy' : '\u2014';
 
     const statusEl = document.getElementById('m-status');
     statusEl.textContent = l.status || (serverRunning ? 'waiting' : 'offline');
@@ -1784,6 +2078,7 @@ ws.onmessage = e => {
     usedVramMb = gpuList.reduce((sum, [, m]) => sum + (m.vram_used || 0), 0);
     renderVramBar(d);
     renderGpuCards(gpuList);
+    renderSystemCards(d.system);
 
     const telemetry = document.getElementById('monitor-telemetry-badge');
     telemetry.textContent = gpuList.length > 0 ? 'GPU telemetry \u00b7 Live \u00b7 ' + gpuList.length + ' device' + (gpuList.length === 1 ? '' : 's') : 'GPU telemetry \u00b7 Unavailable';
