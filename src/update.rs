@@ -57,12 +57,56 @@ pub fn apply_update(branch: String) {
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
-            let script = format!(
-                "git fetch origin && git checkout {branch} && git reset --hard origin/{branch} && cargo build --release && exec ./target/release/llama-admin-monitor"
-            );
+            
+            let exe_path = std::env::current_exe()
+                .unwrap_or_else(|_| std::path::PathBuf::from("./target/release/llama-admin-monitor"))
+                .to_string_lossy()
+                .to_string();
+
+            let script = if branch == "main" {
+                format!(
+                    r#"
+                    echo "[info] Fetching latest release info..."
+                    LATEST_TAG=$(curl -s https://api.github.com/repos/ViriatusOG/llama-admin-monitor/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+                    if [ -z "$LATEST_TAG" ]; then
+                        echo "[error] Could not determine latest release tag."
+                        exit 1
+                    fi
+                    echo "[info] Latest release is $LATEST_TAG. Downloading..."
+                    
+                    ARCH=$(uname -m)
+                    if [ "$ARCH" = "x86_64" ]; then
+                        ASSET="llama-admin-monitor-linux-x86_64"
+                    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                        ASSET="llama-admin-monitor-linux-aarch64"
+                    else
+                        echo "[error] Unsupported architecture $ARCH"
+                        exit 1
+                    fi
+                    
+                    DOWNLOAD_URL="https://github.com/ViriatusOG/llama-admin-monitor/releases/download/$LATEST_TAG/$ASSET"
+                    
+                    # Ensure git tree is synced
+                    git fetch origin
+                    git checkout main
+                    git reset --hard origin/main
+                    
+                    echo "[info] Downloading $DOWNLOAD_URL to {exe_path}"
+                    curl -L -o "{exe_path}" "$DOWNLOAD_URL"
+                    chmod +x "{exe_path}"
+                    
+                    echo "[info] Restarting..."
+                    exec "{exe_path}"
+                    "#
+                )
+            } else {
+                format!(
+                    "git fetch origin && git checkout {branch} && git reset --hard origin/{branch} && cargo build --release && exec {exe_path}"
+                )
+            };
+
             println!("[info] Executing update: {}", script);
             let err = Command::new("bash").arg("-c").arg(&script).exec();
-            // If exec returns, it failed!
             eprintln!("[error] Failed to exec update script: {}", err);
         }
         
