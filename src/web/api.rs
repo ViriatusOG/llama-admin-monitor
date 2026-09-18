@@ -436,12 +436,13 @@ pub fn api_v1_proxy(
                         format!("http://127.0.0.1:{}/v1/{}", port, path)
                     };
 
+                    let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap();
                     let client = reqwest::Client::new();
-                    let mut req = client.request(method, &url).body(body.to_vec());
+                    let mut req = client.request(reqwest_method, &url).body(body.to_vec());
                     
                     for (k, v) in headers.iter() {
                         if k.as_str().to_lowercase() != "host" {
-                            req = req.header(k, v);
+                            req = req.header(k.as_str(), v.as_bytes());
                         }
                     }
 
@@ -451,7 +452,7 @@ pub fn api_v1_proxy(
                             let mut builder = warp::http::Response::builder().status(status);
                             
                             for (k, v) in resp.headers().iter() {
-                                builder = builder.header(k.as_str(), v);
+                                builder = builder.header(k.as_str(), v.as_bytes());
                             }
                             
                             let stream = resp.bytes_stream();
