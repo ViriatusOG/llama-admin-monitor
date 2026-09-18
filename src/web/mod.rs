@@ -21,7 +21,15 @@ pub fn build_routes(
 
 fn static_routes() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let index = warp::path::end().map(|| {
-        let html = static_assets::INDEX_HTML.replace("{{VERSION}}", env!("CARGO_PKG_VERSION"));
+        let branch = crate::update::get_current_branch();
+        let badge = if branch == "beta" {
+            r#"<span class="badge badge-accent" style="margin-left: 4px; padding: 0 4px; font-size: 8px; line-height: 1.2;">BETA</span>"#
+        } else {
+            ""
+        };
+        let html = static_assets::INDEX_HTML
+            .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
+            .replace("{{BETA_BADGE}}", badge);
         warp::reply::html(html)
     });
 

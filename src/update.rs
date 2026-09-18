@@ -12,6 +12,17 @@ pub struct UpdateStatus {
     pub beta_latest_commit: String,
 }
 
+pub fn get_current_branch() -> String {
+    let out = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output();
+    if let Ok(out) = out {
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
 pub fn check_updates() -> Result<UpdateStatus> {
     // 1. git fetch origin
     Command::new("git").args(["fetch", "origin"]).output()?;
