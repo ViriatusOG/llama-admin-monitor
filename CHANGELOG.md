@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer) with the format `YYYY.MM.DD`. 
 Backwards compatibility is preserved unless explicitly noted.
 
+## [2026.9.20]
+### Fixed
+- Fixed an issue where the `BETA` UI badge was hardcoded into stable release binaries.
+- Overhauled the App Updates tab to separate track-switching from new updates.
+
 ## [2026.9.19]
 ### Added
 - **OpenAI-Compatible API Proxy**: Exposes a transparent `/v1/*` proxy to route directly to the active `llama-server`. Compatible with SillyTavern and custom scripts.
