@@ -2302,8 +2302,7 @@ if ('serviceWorker' in navigator) {
 async function checkAppUpdates() {
     document.getElementById('updates-loading').style.display = 'block';
     document.getElementById('updates-available-group').style.display = 'none';
-    document.getElementById('update-main-row').style.display = 'none';
-    document.getElementById('update-beta-row').style.display = 'none';
+    document.getElementById('updates-switch-group').style.display = 'none';
     
     try {
         const res = await fetch('/api/app/update/check');
@@ -2315,22 +2314,44 @@ async function checkAppUpdates() {
         
         let hasUpdates = false;
         
-        if (data.current_branch !== 'main' || (data.main_latest_commit && data.main_latest_commit !== data.current_commit)) {
-            hasUpdates = true;
-            document.getElementById('update-main-row').style.display = 'flex';
-            document.getElementById('update-main-desc').textContent = data.current_branch === 'main' ? 'Latest: ' + data.main_latest_commit : 'Switch to stable track';
-        }
-        
-        if (data.current_branch !== 'beta' || (data.beta_latest_commit && data.beta_latest_commit !== data.current_commit)) {
-            hasUpdates = true;
-            document.getElementById('update-beta-row').style.display = 'flex';
-            document.getElementById('update-beta-desc').textContent = data.current_branch === 'beta' ? 'Latest: ' + data.beta_latest_commit : 'Switch to beta track';
+        // Check for updates on the CURRENT branch
+        if (data.current_branch === 'main') {
+            if (data.main_latest_commit && data.main_latest_commit !== data.current_commit) {
+                hasUpdates = true;
+                document.getElementById('update-current-title').textContent = 'Stable Release (main)';
+                document.getElementById('update-current-desc').textContent = 'Latest: ' + data.main_latest_commit;
+                document.getElementById('btn-update-current').setAttribute('onclick', "applyAppUpdate('main')");
+                document.getElementById('btn-update-current').textContent = 'Install Stable';
+            }
+            
+            // Show switch to beta
+            document.getElementById('updates-switch-group').style.display = 'block';
+            document.getElementById('update-switch-title').textContent = 'Beta Release (beta)';
+            document.getElementById('update-switch-desc').textContent = 'Cutting edge features (Latest: ' + data.beta_latest_commit + ')';
+            document.getElementById('btn-update-switch').setAttribute('onclick', "applyAppUpdate('beta')");
+            document.getElementById('btn-update-switch').textContent = 'Switch to Beta';
+            
+        } else {
+            if (data.beta_latest_commit && data.beta_latest_commit !== data.current_commit) {
+                hasUpdates = true;
+                document.getElementById('update-current-title').textContent = 'Beta Release (beta)';
+                document.getElementById('update-current-desc').textContent = 'Latest: ' + data.beta_latest_commit;
+                document.getElementById('btn-update-current').setAttribute('onclick', "applyAppUpdate('beta')");
+                document.getElementById('btn-update-current').textContent = 'Install Beta Update';
+            }
+            
+            // Show switch to stable
+            document.getElementById('updates-switch-group').style.display = 'block';
+            document.getElementById('update-switch-title').textContent = 'Stable Release (main)';
+            document.getElementById('update-switch-desc').textContent = 'Recommended for most users (Latest: ' + data.main_latest_commit + ')';
+            document.getElementById('btn-update-switch').setAttribute('onclick', "applyAppUpdate('main')");
+            document.getElementById('btn-update-switch').textContent = 'Switch to Stable';
         }
         
         if (hasUpdates) {
             document.getElementById('updates-available-group').style.display = 'block';
         } else {
-            showToast('You are on the latest version!', 'success');
+            showToast('You are on the latest version of ' + data.current_branch + '!', 'success');
         }
     } catch (err) {
         document.getElementById('updates-loading').style.display = 'none';

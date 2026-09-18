@@ -493,25 +493,29 @@
                 </div>
                 
                 <div class="settings-group" id="updates-available-group" style="display: none; border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4);">
-                    <h3 style="margin-top:0; margin-bottom: var(--space-3); color: var(--fg-bright); font-size: 14px;">Available Updates</h3>
+                    <h3 style="margin-top:0; margin-bottom: var(--space-3); color: var(--fg-bright); font-size: 14px;">Update Available</h3>
                     
-                    <div class="settings-row" id="update-main-row" style="display: none;">
+                    <div class="settings-row">
                         <div class="settings-info">
-                            <div class="settings-label">Stable Release (main)</div>
-                            <div class="settings-desc" id="update-main-desc">New commits available</div>
+                            <div class="settings-label" id="update-current-title">New version available</div>
+                            <div class="settings-desc" id="update-current-desc">New commits are ready to install</div>
                         </div>
                         <div class="settings-control">
-                            <button class="btn btn-primary" onclick="applyAppUpdate('main')">Install Stable</button>
+                            <button class="btn btn-primary" id="btn-update-current" onclick="">Install Update</button>
                         </div>
                     </div>
+                </div>
+                
+                <div class="settings-group" id="updates-switch-group" style="display: none; border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4);">
+                    <h3 style="margin-top:0; margin-bottom: var(--space-3); color: var(--fg-bright); font-size: 14px;">Switch Release Track</h3>
                     
-                    <div class="settings-row" id="update-beta-row" style="display: none;">
+                    <div class="settings-row">
                         <div class="settings-info">
-                            <div class="settings-label">Beta Release (beta)</div>
-                            <div class="settings-desc" id="update-beta-desc">New commits available</div>
+                            <div class="settings-label" id="update-switch-title">Switch Track</div>
+                            <div class="settings-desc" id="update-switch-desc">Change between main and beta tracks</div>
                         </div>
                         <div class="settings-control">
-                            <button class="btn btn-primary" onclick="applyAppUpdate('beta')">Install Beta</button>
+                            <button class="btn" id="btn-update-switch" onclick="">Switch Track</button>
                         </div>
                     </div>
                 </div>
