@@ -51,6 +51,7 @@ pub fn scan_models_dir(dir: &Path) -> Result<Vec<DiscoveredModel>> {
         let (model_name, quant_type) = parse_gguf_filename(&filename);
 
         let meta = read_model_metadata(dir, &filename);
+        let is_mmproj = is_mmproj_filename(&filename);
 
         models.push(DiscoveredModel {
             path: path.clone(),
@@ -60,7 +61,7 @@ pub fn scan_models_dir(dir: &Path) -> Result<Vec<DiscoveredModel>> {
             quant_type,
             model_name,
             is_split,
-            is_mmproj: is_mmproj_filename(&filename),
+            is_mmproj,
             hf_repo: meta.as_ref().map(|m| m.repo.clone()),
             downloaded_at: meta.as_ref().map(|m| m.downloaded_at),
             hf_downloads: meta.as_ref().and_then(|m| m.hf_downloads),
