@@ -778,7 +778,7 @@ fn api_app_update_check() -> impl Filter<Extract = (impl warp::Reply,), Error = 
         .and(warp::get())
         .map(|| {
             match update::check_updates() {
-                Ok(status) => warp::reply::json(&status),
+                Ok(status) => warp::reply::with_status(warp::reply::json(&status), warp::http::StatusCode::OK),
                 Err(e) => {
                     let err = serde_json::json!({"error": e.to_string()});
                     warp::reply::with_status(warp::reply::json(&err), warp::http::StatusCode::INTERNAL_SERVER_ERROR)
