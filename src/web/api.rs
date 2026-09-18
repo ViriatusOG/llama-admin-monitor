@@ -35,7 +35,7 @@ pub fn api_routes(
     let hf_search = api_hf_search();
     let hf_files = api_hf_files();
     let hf_download = api_hf_download(state.clone());
-    let chat = api_chat(state);
+    let v1_proxy = api_v1_proxy(state);
 
     start
         .or(stop)
@@ -56,7 +56,7 @@ pub fn api_routes(
         .or(hf_search)
         .or(hf_files)
         .or(hf_download)
-        .or(chat)
+        .or(v1_proxy)
 }
 
 fn api_start(
@@ -407,57 +407,56 @@ fn api_browse() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Reje
         })
 }
 
-fn api_chat(
+pub fn api_v1_proxy(
     state: AppState,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    warp::path!("api" / "chat")
-        .and(warp::post())
-        .and(warp::query::<std::collections::HashMap<String, String>>())
+    warp::path("v1")
+        .and(warp::path::tail())
+        .and(warp::method())
+        .and(warp::query::raw().map(Some).or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) }))
+        .and(warp::header::headers_cloned())
         .and(warp::body::bytes())
         .and_then(
-            move |query: std::collections::HashMap<String, String>, body: bytes::Bytes| {
+            move |tail: warp::path::Tail,
+                  method: warp::http::Method,
+                  query: Option<String>,
+                  headers: warp::http::HeaderMap,
+                  body: bytes::Bytes| {
                 let state = state.clone();
                 async move {
-                    // Use port from query param if provided, else from server config, else 8080
-                    let port = query
-                        .get("port")
-                        .and_then(|p| p.parse::<u16>().ok())
-                        .unwrap_or_else(|| {
-                            state
-                                .server_config
-                                .lock()
-                                .unwrap()
-                                .as_ref()
-                                .map(|c| c.port)
-                                .unwrap_or(8080)
-                        });
-                    let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
+                    let port = {
+                        let cfg = state.server_config.lock().unwrap();
+                        cfg.as_ref().map(|c| c.port).unwrap_or(8080)
+                    };
+                    
+                    let path = tail.as_str();
+                    let url = if let Some(q) = query {
+                        format!("http://127.0.0.1:{}/v1/{}?{}", port, path, q)
+                    } else {
+                        format!("http://127.0.0.1:{}/v1/{}", port, path)
+                    };
 
                     let client = reqwest::Client::new();
-                    match client
-                        .post(&url)
-                        .header("Content-Type", "application/json")
-                        .body(body.to_vec())
-                        .send()
-                        .await
-                    {
+                    let mut req = client.request(method, &url).body(body.to_vec());
+                    
+                    for (k, v) in headers.iter() {
+                        if k.as_str().to_lowercase() != "host" {
+                            req = req.header(k, v);
+                        }
+                    }
+
+                    match req.send().await {
                         Ok(resp) => {
                             let status = resp.status().as_u16();
-                            let ct = resp
-                                .headers()
-                                .get("content-type")
-                                .and_then(|v| v.to_str().ok())
-                                .unwrap_or("application/json")
-                                .to_string();
+                            let mut builder = warp::http::Response::builder().status(status);
+                            
+                            for (k, v) in resp.headers().iter() {
+                                builder = builder.header(k.as_str(), v);
+                            }
+                            
                             let stream = resp.bytes_stream();
-                            let body = warp::hyper::Body::wrap_stream(stream);
-                            Ok::<_, warp::Rejection>(
-                                warp::http::Response::builder()
-                                    .status(status)
-                                    .header("content-type", ct)
-                                    .body(body)
-                                    .unwrap(),
-                            )
+                            let body_stream = warp::hyper::Body::wrap_stream(stream);
+                            Ok::<_, warp::Rejection>(builder.body(body_stream).unwrap())
                         }
                         Err(e) => {
                             let err = format!(

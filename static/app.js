@@ -2213,8 +2213,7 @@ async function sendChat() {
     appendMsg('user', text);
     document.getElementById('nav-count-chat').textContent = String(chatHistory.length);
 
-    const chatPort = document.getElementById('port').value || '8080';
-    const url = '/api/chat?port=' + encodeURIComponent(chatPort);
+    const url = '/v1/chat/completions';
 
     chatBusy = true;
     document.getElementById('btn-send').disabled = true;
@@ -2300,6 +2299,12 @@ if ('serviceWorker' in navigator) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Populate OpenAI API Base URL dynamically
+    const apiUrlEls = document.querySelectorAll('.api-base-url-display');
+    apiUrlEls.forEach(el => {
+        el.textContent = window.location.protocol + '//' + window.location.host + '/v1';
+    });
+
     const outCard = document.getElementById('monitor-output-card');
     if (outCard) {
         const stored = localStorage.getItem('llama_monitor_output_open');
