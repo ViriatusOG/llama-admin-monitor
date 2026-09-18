@@ -1265,13 +1265,14 @@ function renderSystemCards(sys) {
     let dimmHtml = '';
     if (sys.dimms && sys.dimms.length > 0) {
         const usedSlots = sys.dimms.filter(d => d.size_bytes > 0).length;
-        dimmHtml = '<span class="monitor-metric-label" style="margin-right: 4px;">' + usedSlots + '/' + sys.dimm_slots_total + ' slots:</span> ' + 
+        dimmHtml = '<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start; margin-top: 8px;">' +
+            '<span class="monitor-metric-label">' + usedSlots + '/' + sys.dimm_slots_total + ' slots populated:</span>' + 
             sys.dimms.filter(d => d.size_bytes > 0).map(d => {
                 const speed = d.configured_speed_mts || d.speed_mts;
-                return '<span class="badge badge-dim" style="margin-right: 4px; margin-top: 4px;">' + fmtBytes(d.size_bytes) + ' ' + d.mem_type + (speed ? ' ' + speed + 'MT/s' : '') + '</span>';
-            }).join('');
+                return '<span class="badge badge-dim">' + fmtBytes(d.size_bytes) + ' ' + d.mem_type + (speed ? ' ' + speed + 'MT/s' : '') + '</span>';
+            }).join('') + '</div>';
     } else if (sys.dimm_error) {
-        dimmHtml = '<span class="help-text" title="' + escapeHtml(sys.dimm_error) + '" style="cursor: help;">DIMM slots info unavailable \u24d8</span>';
+        dimmHtml = '<div style="margin-top: 8px;"><span class="help-text" title="' + escapeHtml(sys.dimm_error) + '" style="cursor: help;">DIMM slots info unavailable \u24d8</span></div>';
     }
     document.getElementById('sys-mem-dimm').innerHTML = dimmHtml;
 
