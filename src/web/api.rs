@@ -696,6 +696,38 @@ fn api_bench_run(
                     }));
                 }
 
+                // Helper to parse comma-separated integers or use preset defaults
+                let parse_ints = |key: &str, default_val: i32| -> Vec<i32> {
+                    let vals: Vec<i32> = body
+                        .get(key)
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|n| n.as_i64().map(|n| n as i32))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if vals.is_empty() {
+                        vec![default_val]
+                    } else {
+                        vals
+                    }
+                };
+
+                // Fall back to preset defaults if user didn't specify arrays for them
+                let (default_batch, default_ubatch, default_threads) = {
+                    let cfg = state.server_config.lock().unwrap();
+                    if let Some(c) = cfg.as_ref() {
+                        (c.batch_size, c.ubatch_size, c.threads.unwrap_or(8))
+                    } else {
+                        (512, 512, 8)
+                    }
+                };
+
+                let batch_sizes = parse_ints("batch_sizes", default_batch);
+                let ubatch_sizes = parse_ints("ubatch_sizes", default_ubatch);
+                let thread_counts = parse_ints("threads", default_threads);
+
                 let gpu_layers = body
                     .get("gpu_layers")
                     .and_then(|v| v.as_i64())

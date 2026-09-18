@@ -419,13 +419,28 @@ async function toggleBenchmark() {
         showToast('Enter at least one tensor split ratio', 'error');
         return;
     }
+
+    const parseList = id => document.getElementById(id).value
+        .split(/[\n,]/)
+        .map(s => parseInt(s.trim()))
+        .filter(n => !isNaN(n));
+
+    const batchSizes = parseList('bench-batch');
+    const ubatchSizes = parseList('bench-ubatch');
+    const threads = parseList('bench-threads');
+
     const ngl = parseInt(document.getElementById('bench-ngl').value) || 999;
 
     try {
+        const payload = { model_path: modelPath, splits: splits, gpu_layers: ngl };
+        if (batchSizes.length > 0) payload.batch_sizes = batchSizes;
+        if (ubatchSizes.length > 0) payload.ubatch_sizes = ubatchSizes;
+        if (threads.length > 0) payload.threads = threads;
+
         const resp = await fetch('/api/bench/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_path: modelPath, splits: splits, gpu_layers: ngl }),
+            body: JSON.stringify(payload),
         });
         const data = await resp.json();
         if (!data.ok) {
@@ -439,18 +454,23 @@ async function toggleBenchmark() {
     }
 }
 
-async function applyBenchSplit(split) {
+async function applyBenchResult(split, batch, ubatch, threads) {
     const id = document.getElementById('preset-select').value;
     const p = presets.find(pr => pr.id === id);
     if (!p) {
         showToast('No preset selected to apply this to', 'error');
         return;
     }
-    const proceed = await showConfirm('Apply tensor split',
-        'Set tensor split to "' + split + '" on preset "' + p.name + '"?');
+    const proceed = await showConfirm('Apply benchmark result',
+        'Set split to "' + split + '", batch to ' + batch + ', and threads to ' + threads + ' on preset "' + p.name + '"?');
     if (!proceed) return;
 
-    const updated = Object.assign({}, p, { tensor_split: split });
+    const updated = Object.assign({}, p, { 
+        tensor_split: split,
+        batch_size: batch,
+        ubatch_size: ubatch,
+        threads: threads
+    });
     try {
         const resp = await fetch('/api/presets/' + encodeURIComponent(p.id), {
             method: 'PUT',
@@ -461,7 +481,7 @@ async function applyBenchSplit(split) {
             showToast('Failed to update preset', 'error');
             return;
         }
-        showToast('Applied ' + split + ' to ' + p.name, 'success');
+        showToast('Applied best settings to ' + p.name, 'success');
         loadPresets();
     } catch (err) {
         showToast('Failed to update preset: ' + err.message, 'error');
@@ -503,12 +523,13 @@ function updateBenchProgress(b) {
 
     if (b.running) {
         statusEl.textContent = 'Benchmarking ' + (b.current_split || '...') +
+            ' (b:' + b.current_batch + ' ub:' + b.current_ubatch + ' t:' + b.current_threads + ') ' +
             '  (' + b.completed + ' of ' + b.total + ' complete)';
         benchLastDone = false;
     } else if (b.done) {
         statusEl.textContent = b.cancelled
-            ? 'Stopped. ' + b.results.length + ' of ' + b.total + ' ratios completed.'
-            : (b.best_split ? 'Done. Fastest split: ' + b.best_split : 'Done.');
+            ? 'Stopped. ' + b.results.length + ' of ' + b.total + ' runs completed.'
+            : (b.best_result ? 'Done. Fastest: ' + b.best_result.tensor_split + ' (b:' + b.best_result.batch_size + ' t:' + b.best_result.threads + ')' : 'Done.');
         if (!benchLastDone) {
             benchLastDone = true;
             if (b.error) showToast('Benchmark error: ' + b.error, 'error');
@@ -517,12 +538,20 @@ function updateBenchProgress(b) {
     }
 
     resultsEl.innerHTML = b.results.map(r => {
-        const isBest = b.best_split === r.tensor_split;
+        // Find if this is the best result by comparing its values exactly, or by reference if available, but here it's serialized.
+        const isBest = b.best_result && b.best_result.tensor_split === r.tensor_split 
+                        && b.best_result.batch_size === r.batch_size 
+                        && b.best_result.ubatch_size === r.ubatch_size 
+                        && b.best_result.threads === r.threads;
+        
         return '<div class="bench-grid-row' + (isBest ? ' bench-best' : '') + '">' +
             '<span>' + escapeHtml(r.tensor_split) + (isBest ? ' \u2605' : '') + '</span>' +
+            '<span>' + r.batch_size + '</span>' +
+            '<span>' + r.ubatch_size + '</span>' +
+            '<span>' + r.threads + '</span>' +
             '<span>' + r.prompt_tps.toFixed(1) + '</span>' +
             '<span>' + r.gen_tps.toFixed(1) + '</span>' +
-            '<span>' + (b.done ? '<button class="btn btn-xs" onclick="applyBenchSplit(\'' + jsStr(r.tensor_split) + '\')">Apply</button>' : '') + '</span>' +
+            '<span>' + (b.done ? '<button class="btn btn-xs" onclick="applyBenchResult(\'' + jsStr(r.tensor_split) + '\', ' + r.batch_size + ', ' + r.ubatch_size + ', ' + r.threads + ')">Apply</button>' : '') + '</span>' +
             '</div>';
     }).join('');
 }

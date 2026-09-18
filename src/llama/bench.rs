@@ -6,6 +6,9 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, Serialize)]
 pub struct BenchResult {
     pub tensor_split: String,
+    pub batch_size: i32,
+    pub ubatch_size: i32,
+    pub threads: i32,
     pub prompt_tps: f64,
     pub gen_tps: f64,
 }
@@ -14,10 +17,13 @@ pub struct BenchResult {
 pub struct BenchProgress {
     pub running: bool,
     pub current_split: String,
+    pub current_batch: i32,
+    pub current_ubatch: i32,
+    pub current_threads: i32,
     pub completed: usize,
     pub total: usize,
     pub results: Vec<BenchResult>,
-    pub best_split: Option<String>,
+    pub best_result: Option<BenchResult>,
     pub error: Option<String>,
     pub done: bool,
 }
@@ -51,12 +57,21 @@ async fn run_one(
     model_path: &str,
     tensor_split: &str,
     gpu_layers: i32,
+    batch_size: i32,
+    ubatch_size: i32,
+    threads: i32,
 ) -> Result<(f64, f64)> {
     let mut cmd = tokio::process::Command::new(bench_bin);
     cmd.arg("-m")
         .arg(model_path)
         .arg("-ngl")
         .arg(gpu_layers.to_string())
+        .arg("-b")
+        .arg(batch_size.to_string())
+        .arg("-ub")
+        .arg(ubatch_size.to_string())
+        .arg("-t")
+        .arg(threads.to_string())
         .arg("-o")
         .arg("json");
     if !tensor_split.is_empty() {
@@ -91,43 +106,62 @@ pub async fn run_benchmark_sweep(
     bench_bin: PathBuf,
     model_path: String,
     splits: Vec<String>,
+    batch_sizes: Vec<i32>,
+    ubatch_sizes: Vec<i32>,
+    thread_counts: Vec<i32>,
     gpu_layers: i32,
     progress: SharedBenchProgress,
 ) {
+    let total_runs = splits.len() * batch_sizes.len() * ubatch_sizes.len() * thread_counts.len();
     {
         let mut p = progress.lock().unwrap();
         *p = BenchProgress {
             running: true,
             current_split: String::new(),
+            current_batch: 0,
+            current_ubatch: 0,
+            current_threads: 0,
             completed: 0,
-            total: splits.len(),
+            total: total_runs,
             results: Vec::new(),
-            best_split: None,
+            best_result: None,
             error: None,
             done: false,
         };
     }
 
     for split in &splits {
-        {
-            let mut p = progress.lock().unwrap();
-            p.current_split = split.clone();
-        }
+        for &batch_size in &batch_sizes {
+            for &ubatch_size in &ubatch_sizes {
+                for &threads in &thread_counts {
+                    {
+                        let mut p = progress.lock().unwrap();
+                        p.current_split = split.clone();
+                        p.current_batch = batch_size;
+                        p.current_ubatch = ubatch_size;
+                        p.current_threads = threads;
+                    }
 
-        match run_one(&bench_bin, &model_path, split, gpu_layers).await {
-            Ok((prompt_tps, gen_tps)) => {
-                let mut p = progress.lock().unwrap();
-                p.results.push(BenchResult {
-                    tensor_split: split.clone(),
-                    prompt_tps,
-                    gen_tps,
-                });
-                p.completed += 1;
-            }
-            Err(e) => {
-                let mut p = progress.lock().unwrap();
-                p.error = Some(e.to_string());
-                p.completed += 1;
+                    match run_one(&bench_bin, &model_path, split, gpu_layers, batch_size, ubatch_size, threads).await {
+                        Ok((prompt_tps, gen_tps)) => {
+                            let mut p = progress.lock().unwrap();
+                            p.results.push(BenchResult {
+                                tensor_split: split.clone(),
+                                batch_size,
+                                ubatch_size,
+                                threads,
+                                prompt_tps,
+                                gen_tps,
+                            });
+                            p.completed += 1;
+                        }
+                        Err(e) => {
+                            let mut p = progress.lock().unwrap();
+                            p.error = Some(e.to_string());
+                            p.completed += 1;
+                        }
+                    }
+                }
             }
         }
     }
@@ -135,7 +169,7 @@ pub async fn run_benchmark_sweep(
     let mut p = progress.lock().unwrap();
     // Rank by generation throughput -- the metric that dominates
     // interactive use. Prompt speed is reported but not used to rank.
-    p.best_split = p
+    p.best_result = p
         .results
         .iter()
         .max_by(|a, b| {
@@ -143,8 +177,29 @@ pub async fn run_benchmark_sweep(
                 .partial_cmp(&b.gen_tps)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .map(|r| r.tensor_split.clone());
+        .cloned();
     p.running = false;
     p.done = true;
     p.current_split = String::new();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bench_binary_path() {
+        // When given a full path
+        let p = bench_binary_path("/opt/llama.cpp/llama-server");
+        assert_eq!(p.to_string_lossy(), "/opt/llama.cpp/llama-bench");
+        
+        // When given a relative path
+        let p = bench_binary_path("./llama-server");
+        assert_eq!(p.to_string_lossy(), "./llama-bench");
+        
+        // When given a bare filename, parent() is Some(""), not None.
+        // Wait, PathBuf::from("llama-server").parent() is Some("").
+        let p = bench_binary_path("llama-server");
+        assert_eq!(p.to_string_lossy(), "llama-bench");
+    }
 }

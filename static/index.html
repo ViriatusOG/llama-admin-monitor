@@ -346,6 +346,18 @@
                         <input type="text" id="bench-splits" placeholder="50/50, 61/39, 65/35">
                     </div>
                     <div class="form-group">
+                        <label class="form-label" for="bench-batch" title="Comma-separated physical batch sizes (-b). E.g. 512, 1024, 2048">Batch Sizes</label>
+                        <input type="text" id="bench-batch" placeholder="Leave empty for preset default">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bench-ubatch" title="Comma-separated micro-batch sizes (-ub). E.g. 512, 1024">Micro-Batch</label>
+                        <input type="text" id="bench-ubatch" placeholder="Leave empty for preset default">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bench-threads" title="Comma-separated thread counts (-t). E.g. 4, 8, 16">Threads</label>
+                        <input type="text" id="bench-threads" placeholder="Leave empty for preset default">
+                    </div>
+                    <div class="form-group">
                         <label class="form-label" for="bench-ngl" title="Layers offloaded to GPU during benchmarking">GPU layers</label>
                         <input type="number" id="bench-ngl" value="999">
                     </div>
@@ -364,7 +376,7 @@
                 </div>
                 <div class="progress-bar bench-progress"><div class="progress-fill" id="bench-bar"></div></div>
                 <div class="bench-grid-header">
-                    <span>Tensor split</span><span>Prompt t/s</span><span>Generation t/s</span><span></span>
+                    <span>Split</span><span>Batch</span><span>uBatch</span><span>Threads</span><span>Prompt t/s</span><span>Generation t/s</span><span></span>
                 </div>
                 <div id="bench-results"></div>
             </div>
