@@ -194,12 +194,12 @@ pub fn parse_rocminfo(output: &str) -> Option<DetectedGpu> {
                 }
                 pending_name = Some(name);
             }
-        } else if pending_name.is_some() {
-            if let Some(marketing) = trimmed.strip_prefix("Marketing Name:") {
-                let marketing = marketing.trim();
-                if !marketing.is_empty() {
-                    pending_name = Some(marketing.to_string());
-                }
+        } else if pending_name.is_some()
+            && let Some(marketing) = trimmed.strip_prefix("Marketing Name:")
+        {
+            let marketing = marketing.trim();
+            if !marketing.is_empty() {
+                pending_name = Some(marketing.to_string());
             }
         }
     }
