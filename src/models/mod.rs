@@ -97,7 +97,11 @@ pub fn parse_gguf_filename(filename: &str) -> (Option<String>, Option<String>) {
                 // Include "UD-" prefix in quant type
                 &stem[pos + 1..]
             } else {
-                &stem[quant_start - pattern.trim_start_matches('-').trim_start_matches('_').len()..]
+                &stem[quant_start
+                    - pattern
+                        .trim_start_matches('-')
+                        .trim_start_matches('_')
+                        .len()..]
             };
 
             if !model_name.is_empty() && quant_str.len() >= 3 {
@@ -199,8 +203,12 @@ mod tests {
 
     #[test]
     fn test_parse_iq_quant() {
-        let (name, quant) = parse_gguf_filename("Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-IQ3_M.gguf");
-        assert_eq!(name.as_deref(), Some("Gemma-4-E4B-Uncensored-HauhauCS-Aggressive"));
+        let (name, quant) =
+            parse_gguf_filename("Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-IQ3_M.gguf");
+        assert_eq!(
+            name.as_deref(),
+            Some("Gemma-4-E4B-Uncensored-HauhauCS-Aggressive")
+        );
         assert_eq!(quant.as_deref(), Some("IQ3_M"));
     }
 

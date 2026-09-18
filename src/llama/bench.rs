@@ -66,7 +66,10 @@ async fn run_one(
     let output = cmd.output().await?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("llama-bench failed: {}", stderr.lines().last().unwrap_or(""));
+        anyhow::bail!(
+            "llama-bench failed: {}",
+            stderr.lines().last().unwrap_or("")
+        );
     }
 
     let rows: Vec<BenchRow> = serde_json::from_slice(&output.stdout)

@@ -124,10 +124,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("llama-admin-monitor")).unwrap();
         std::fs::create_dir_all(base.join("llama-monitor")).unwrap();
-        assert_eq!(
-            resolve_config_dir(Some(base.clone())),
-            base.join("llama-admin-monitor")
-        );
+        assert_eq!(resolve_config_dir(Some(base.clone())), base.join("llama-admin-monitor"));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -136,10 +133,7 @@ mod tests {
         let base = std::env::temp_dir().join("llama-admin-monitor-cfg-legacy");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("llama-monitor")).unwrap();
-        assert_eq!(
-            resolve_config_dir(Some(base.clone())),
-            base.join("llama-monitor")
-        );
+        assert_eq!(resolve_config_dir(Some(base.clone())), base.join("llama-monitor"));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -147,9 +141,6 @@ mod tests {
     fn test_config_dir_defaults_to_new_when_neither_exists() {
         let base = std::env::temp_dir().join("llama-admin-monitor-cfg-none");
         let _ = std::fs::remove_dir_all(&base);
-        assert_eq!(
-            resolve_config_dir(Some(base.clone())),
-            base.join("llama-admin-monitor")
-        );
+        assert_eq!(resolve_config_dir(Some(base.clone())), base.join("llama-admin-monitor"));
     }
 }

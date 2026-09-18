@@ -480,36 +480,44 @@ fn api_hf_search() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::R
     warp::path!("api" / "hf" / "search")
         .and(warp::get())
         .and(warp::query::<std::collections::HashMap<String, String>>())
-        .and_then(|query: std::collections::HashMap<String, String>| async move {
-            let q = query.get("q").cloned().unwrap_or_default();
-            if q.trim().is_empty() {
-                return Ok::<_, warp::Rejection>(warp::reply::json(
-                    &serde_json::json!({"results": []}),
-                ));
-            }
-            match hf::search_hf_models(&q).await {
-                Ok(results) => Ok(warp::reply::json(&serde_json::json!({"results": results}))),
-                Err(e) => Ok(warp::reply::json(&serde_json::json!({"error": e.to_string()}))),
-            }
-        })
+        .and_then(
+            |query: std::collections::HashMap<String, String>| async move {
+                let q = query.get("q").cloned().unwrap_or_default();
+                if q.trim().is_empty() {
+                    return Ok::<_, warp::Rejection>(warp::reply::json(
+                        &serde_json::json!({"results": []}),
+                    ));
+                }
+                match hf::search_hf_models(&q).await {
+                    Ok(results) => Ok(warp::reply::json(&serde_json::json!({"results": results}))),
+                    Err(e) => Ok(warp::reply::json(
+                        &serde_json::json!({"error": e.to_string()}),
+                    )),
+                }
+            },
+        )
 }
 
 fn api_hf_files() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "hf" / "files")
         .and(warp::get())
         .and(warp::query::<std::collections::HashMap<String, String>>())
-        .and_then(|query: std::collections::HashMap<String, String>| async move {
-            let repo = query.get("repo").cloned().unwrap_or_default();
-            if repo.trim().is_empty() {
-                return Ok::<_, warp::Rejection>(warp::reply::json(
-                    &serde_json::json!({"error": "missing repo"}),
-                ));
-            }
-            match hf::list_hf_gguf_files(&repo).await {
-                Ok(files) => Ok(warp::reply::json(&serde_json::json!({"files": files}))),
-                Err(e) => Ok(warp::reply::json(&serde_json::json!({"error": e.to_string()}))),
-            }
-        })
+        .and_then(
+            |query: std::collections::HashMap<String, String>| async move {
+                let repo = query.get("repo").cloned().unwrap_or_default();
+                if repo.trim().is_empty() {
+                    return Ok::<_, warp::Rejection>(warp::reply::json(
+                        &serde_json::json!({"error": "missing repo"}),
+                    ));
+                }
+                match hf::list_hf_gguf_files(&repo).await {
+                    Ok(files) => Ok(warp::reply::json(&serde_json::json!({"files": files}))),
+                    Err(e) => Ok(warp::reply::json(
+                        &serde_json::json!({"error": e.to_string()}),
+                    )),
+                }
+            },
+        )
 }
 
 fn api_hf_download(
@@ -519,48 +527,46 @@ fn api_hf_download(
         .and(warp::post())
         .and(warp::body::json())
         .and(warp::any().map(move || state.clone()))
-        .and_then(
-            |body: serde_json::Value, state: AppState| async move {
-                let repo = body
-                    .get("repo")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let filename = body
-                    .get("filename")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if repo.is_empty() || filename.is_empty() {
-                    return Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
+        .and_then(|body: serde_json::Value, state: AppState| async move {
+            let repo = body
+                .get("repo")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let filename = body
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if repo.is_empty() || filename.is_empty() {
+                return Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
+                    "ok": false,
+                    "error": "repo and filename required"
+                })));
+            }
+            let dest_dir = match state.models_dir.lock().unwrap().clone() {
+                Some(d) => d,
+                None => {
+                    return Ok(warp::reply::json(&serde_json::json!({
                         "ok": false,
-                        "error": "repo and filename required"
+                        "error": "models directory not configured"
                     })));
                 }
-                let dest_dir = match state.models_dir.lock().unwrap().clone() {
-                    Some(d) => d,
-                    None => {
-                        return Ok(warp::reply::json(&serde_json::json!({
-                            "ok": false,
-                            "error": "models directory not configured"
-                        })));
-                    }
-                };
-                let progress = state.hf_download_progress.clone();
-                let models_dir_state = state.models_dir.clone();
-                let discovered_models = state.discovered_models.clone();
-                tokio::spawn(async move {
-                    hf::download_hf_file(repo, filename, dest_dir, progress).await;
-                    let dir_opt = models_dir_state.lock().unwrap().clone();
-                    if let Some(dir) = dir_opt
-                        && let Ok(discovered) = crate::models::scan_models_dir(&dir)
-                    {
-                        *discovered_models.lock().unwrap() = discovered;
-                    }
-                });
-                Ok(warp::reply::json(&serde_json::json!({"ok": true})))
-            },
-        )
+            };
+            let progress = state.hf_download_progress.clone();
+            let models_dir_state = state.models_dir.clone();
+            let discovered_models = state.discovered_models.clone();
+            tokio::spawn(async move {
+                hf::download_hf_file(repo, filename, dest_dir, progress).await;
+                let dir_opt = models_dir_state.lock().unwrap().clone();
+                if let Some(dir) = dir_opt
+                    && let Ok(discovered) = crate::models::scan_models_dir(&dir)
+                {
+                    *discovered_models.lock().unwrap() = discovered;
+                }
+            });
+            Ok(warp::reply::json(&serde_json::json!({"ok": true})))
+        })
 }
 
 fn api_delete_model(
