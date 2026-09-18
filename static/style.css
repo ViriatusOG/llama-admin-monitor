@@ -597,6 +597,36 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 /* ════════════════════════════════════════════
    RESPONSIVE
    ════════════════════════════════════════════ */
+details.monitor-output-card > summary {
+    cursor: pointer;
+    list-style: none; /* Hide default marker */
+}
+details.monitor-output-card > summary::-webkit-details-marker {
+    display: none;
+}
+details.monitor-output-card > summary .details-chevron {
+    transition: transform 0.2s ease;
+    margin-left: var(--space-2);
+}
+details.monitor-output-card:not([open]) > summary .details-chevron {
+    transform: rotate(-90deg);
+}
+
+.cpu-cores-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: var(--space-3);
+    max-width: 100%;
+}
+.cpu-core-cell {
+    width: 12px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-subtle);
+}
+
 .mobile-toggle {
     display: none; position: fixed; top: var(--space-3); left: var(--space-3); z-index: 200;
     width: 40px; height: 40px; border-radius: var(--radius-sm);

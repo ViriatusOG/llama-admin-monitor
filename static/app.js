@@ -1242,6 +1242,17 @@ function renderSystemCards(sys) {
     if (sys.load_avg_1m != null) cpuBits.push('load ' + sys.load_avg_1m.toFixed(2));
     if (sys.sample_secs) cpuBits.push(sys.sample_secs.toFixed(1) + ' s sample');
     document.getElementById('sys-cpu-sub').textContent = cpuBits.join(' \u00b7 ');
+    document.getElementById('sys-cpu-model').textContent = sys.cpu_model || '';
+
+    const coresGrid = document.getElementById('sys-cpu-cores');
+    if (sys.core_percent && sys.core_percent.length > 0) {
+        coresGrid.innerHTML = sys.core_percent.map(p => {
+            const pct = p != null ? p : 0;
+            return '<div class="cpu-core-cell" title="' + pct.toFixed(1) + '%" style="background: color-mix(in srgb, var(--accent) ' + pct + '%, transparent)"></div>';
+        }).join('');
+    } else {
+        coresGrid.innerHTML = '';
+    }
 
     // Memory
     const memPct = sys.mem_total_bytes > 0 ? (sys.mem_used_bytes / sys.mem_total_bytes) * 100 : null;
@@ -1250,6 +1261,19 @@ function renderSystemCards(sys) {
     let memSub = fmtBytes(sys.mem_used_bytes) + ' used of ' + fmtBytes(sys.mem_total_bytes);
     if (sys.swap_total_bytes > 0) memSub += ' \u00b7 swap ' + fmtBytes(sys.swap_used_bytes) + ' / ' + fmtBytes(sys.swap_total_bytes);
     document.getElementById('sys-mem-sub').textContent = memSub;
+
+    let dimmHtml = '';
+    if (sys.dimms && sys.dimms.length > 0) {
+        const usedSlots = sys.dimms.filter(d => d.size_bytes > 0).length;
+        dimmHtml = '<span class="monitor-metric-label" style="margin-right: 4px;">' + usedSlots + '/' + sys.dimm_slots_total + ' slots:</span> ' + 
+            sys.dimms.filter(d => d.size_bytes > 0).map(d => {
+                const speed = d.configured_speed_mts || d.speed_mts;
+                return '<span class="badge badge-dim" style="margin-right: 4px; margin-top: 4px;">' + fmtBytes(d.size_bytes) + ' ' + d.mem_type + (speed ? ' ' + speed + 'MT/s' : '') + '</span>';
+            }).join('');
+    } else if (sys.dimm_error) {
+        dimmHtml = '<span class="help-text">DIMM slots unavailable (' + escapeHtml(sys.dimm_error) + ')</span>';
+    }
+    document.getElementById('sys-mem-dimm').innerHTML = dimmHtml;
 
     // Disk
     document.getElementById('sys-disk-read').textContent = fmtRate(sys.disk_read_bytes_per_sec);
@@ -2005,7 +2029,11 @@ function renderRuntime() {
 
 let logClearedAt = 0;
 
-function clearOutput() {
+function clearOutput(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     logClearedAt = prevLogLen;
     document.getElementById('log-panel').textContent = '';
 }
@@ -2240,3 +2268,14 @@ async function sendChat() {
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const outCard = document.getElementById('monitor-output-card');
+    if (outCard) {
+        const stored = localStorage.getItem('llama_monitor_output_open');
+        if (stored !== null) outCard.open = stored === 'true';
+        outCard.addEventListener('toggle', () => {
+            localStorage.setItem('llama_monitor_output_open', outCard.open);
+        });
+    }
+});
