@@ -80,58 +80,68 @@ pub fn pi_ws_route(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let pi = warp::path!("ws" / "pi").map(|| "pi");
     let dsh = warp::path!("ws" / "dsh").map(|| "dsh");
-    pi.or(dsh).unify().and(warp::ws()).map(move |which: &'static str, ws: Ws| {
-        let state = state.clone();
-        ws.on_upgrade(move |socket| async move {
-            let (mut ws_tx, mut ws_rx) = socket.split();
-            let slot = if which == "dsh" { &state.dsh } else { &state.pi };
-            let session = slot.lock().unwrap().clone();
-            let Some(session) = session else {
-                let _ = ws_tx
-                    .send(Message::text(&format!(r#"{{"error":"no {which} session"}}"#)))
-                    .await;
-                return;
-            };
-            let (scrollback, mut rx) = session.subscribe();
-            if !scrollback.is_empty() && ws_tx.send(Message::binary(scrollback)).await.is_err() {
-                return;
-            }
-            let out = tokio::spawn(async move {
-                loop {
-                    match rx.recv().await {
-                        Ok(chunk) => {
-                            if ws_tx.send(Message::binary(chunk)).await.is_err() {
-                                break;
+    pi.or(dsh)
+        .unify()
+        .and(warp::ws())
+        .map(move |which: &'static str, ws: Ws| {
+            let state = state.clone();
+            ws.on_upgrade(move |socket| async move {
+                let (mut ws_tx, mut ws_rx) = socket.split();
+                let slot = if which == "dsh" {
+                    &state.dsh
+                } else {
+                    &state.pi
+                };
+                let session = slot.lock().unwrap().clone();
+                let Some(session) = session else {
+                    let _ = ws_tx
+                        .send(Message::text(&format!(
+                            r#"{{"error":"no {which} session"}}"#
+                        )))
+                        .await;
+                    return;
+                };
+                let (scrollback, mut rx) = session.subscribe();
+                if !scrollback.is_empty() && ws_tx.send(Message::binary(scrollback)).await.is_err()
+                {
+                    return;
+                }
+                let out = tokio::spawn(async move {
+                    loop {
+                        match rx.recv().await {
+                            Ok(chunk) => {
+                                if ws_tx.send(Message::binary(chunk)).await.is_err() {
+                                    break;
+                                }
                             }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(_) => break,
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(_) => break,
+                    }
+                });
+                while let Some(Ok(msg)) = ws_rx.next().await {
+                    if msg.is_binary() {
+                        let _ = session.write_input(msg.as_bytes());
+                    } else if msg.is_text() {
+                        if let Ok(v) =
+                            serde_json::from_str::<serde_json::Value>(msg.to_str().unwrap_or(""))
+                            && let Some(size) = v.get("resize").and_then(|r| r.as_array())
+                            && size.len() == 2
+                        {
+                            let cols = size[0].as_u64().unwrap_or(80) as u16;
+                            let rows = size[1].as_u64().unwrap_or(24) as u16;
+                            let _ = session.resize(cols, rows);
+                        } else if let Ok(v) =
+                            serde_json::from_str::<serde_json::Value>(msg.to_str().unwrap_or(""))
+                            && let Some(text) = v.get("input").and_then(|t| t.as_str())
+                        {
+                            let _ = session.write_input(text.as_bytes());
+                        }
+                    } else if msg.is_close() {
+                        break;
                     }
                 }
-            });
-            while let Some(Ok(msg)) = ws_rx.next().await {
-                if msg.is_binary() {
-                    let _ = session.write_input(msg.as_bytes());
-                } else if msg.is_text() {
-                    if let Ok(v) =
-                        serde_json::from_str::<serde_json::Value>(msg.to_str().unwrap_or(""))
-                        && let Some(size) = v.get("resize").and_then(|r| r.as_array())
-                        && size.len() == 2
-                    {
-                        let cols = size[0].as_u64().unwrap_or(80) as u16;
-                        let rows = size[1].as_u64().unwrap_or(24) as u16;
-                        let _ = session.resize(cols, rows);
-                    } else if let Ok(v) =
-                        serde_json::from_str::<serde_json::Value>(msg.to_str().unwrap_or(""))
-                        && let Some(text) = v.get("input").and_then(|t| t.as_str())
-                    {
-                        let _ = session.write_input(text.as_bytes());
-                    }
-                } else if msg.is_close() {
-                    break;
-                }
-            }
-            out.abort();
+                out.abort();
+            })
         })
-    })
 }

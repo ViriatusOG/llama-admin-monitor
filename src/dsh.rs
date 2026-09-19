@@ -131,7 +131,10 @@ fn write_settings_at(path: PathBuf, monitor_port: u16, models: &[ModelEntry]) ->
         *providers = Value::Mapping(Mapping::new());
     }
     let Value::Mapping(providers) = providers else {
-        bail!("\"llm-pi-ai.providers\" in {} is not a mapping", path.display());
+        bail!(
+            "\"llm-pi-ai.providers\" in {} is not a mapping",
+            path.display()
+        );
     };
     let model_list: Vec<serde_json::Value> = models
         .iter()
@@ -284,7 +287,10 @@ mod tests {
         write_settings_at(path.clone(), 7778, &[entry("m", 8192)]).unwrap();
         let v: serde_yaml_ng::Value =
             serde_yaml_ng::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(v["llm-pi-ai"]["providers"][PROVIDER]["models"][0]["maxTokens"], 4096);
+        assert_eq!(
+            v["llm-pi-ai"]["providers"][PROVIDER]["models"][0]["maxTokens"],
+            4096
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
