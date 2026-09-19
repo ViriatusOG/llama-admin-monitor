@@ -19,19 +19,25 @@ pub fn build_routes(
     ws.or(api).or(static_files)
 }
 
-fn static_routes() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    let index = warp::path::end().map(|| {
-        let branch = crate::update::get_current_branch();
-        let badge = if branch == "beta" {
-            r#"<span class="badge badge-accent" style="margin-left: 4px; padding: 0 4px; font-size: 8px; line-height: 1.2;">BETA</span>"#
-        } else {
-            ""
+/// The dashboard HTML with the build's version and track filled in. Both
+/// are compile-time constants, so this is rendered once and reused.
+fn rendered_index() -> &'static str {
+    static INDEX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        let track = crate::update::current_track();
+        let badge = match track {
+            "beta" => r#"<span class="badge badge-accent track-badge">BETA</span>"#,
+            "dev" => r#"<span class="badge badge-dim track-badge">DEV</span>"#,
+            _ => "",
         };
-        let html = static_assets::INDEX_HTML
-            .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
-            .replace("{{BETA_BADGE}}", badge);
-        warp::reply::html(html)
-    });
+        static_assets::INDEX_HTML
+            .replace("{{VERSION}}", &crate::update::current_version())
+            .replace("{{BETA_BADGE}}", badge)
+    })
+}
+
+fn static_routes() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    let index = warp::path::end().map(|| warp::reply::html(rendered_index()));
 
     let tokens = warp::path("tokens.css")
         .and(warp::get())

@@ -2140,6 +2140,7 @@ ws.onmessage = e => {
     renderVramBar(d);
     renderGpuCards(gpuList);
     renderSystemCards(d.system);
+    renderUpdatePhase(d.app_update || null);
 
     const telemetry = document.getElementById('monitor-telemetry-badge');
     telemetry.textContent = gpuList.length > 0 ? 'GPU telemetry \u00b7 Live \u00b7 ' + gpuList.length + ' device' + (gpuList.length === 1 ? '' : 's') : 'GPU telemetry \u00b7 Unavailable';
@@ -2301,106 +2302,133 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+// --- In-app updates ---
+
+let updateStatus = null;
+
+function releaseLabel(r) {
+    if (!r) return 'none published';
+    const when = r.published_at ? ' \u00b7 ' + new Date(r.published_at).toLocaleDateString() : '';
+    return r.tag + when;
+}
+
 async function checkAppUpdates() {
-    document.getElementById('updates-loading').style.display = 'block';
-    document.getElementById('updates-available-group').style.display = 'none';
-    document.getElementById('updates-switch-group').style.display = 'none';
-    
+    const note = document.getElementById('updates-note');
+    note.hidden = true;
+    document.getElementById('updates-available-row').hidden = true;
+    document.getElementById('updates-switch-row').hidden = true;
     try {
         const res = await fetch('/api/app/update/check');
-        if (!res.ok) throw new Error('Failed to check updates');
         const data = await res.json();
-        
-        document.getElementById('update-current-branch').textContent = data.current_branch + ' (' + data.current_commit + ')';
-        document.getElementById('updates-loading').style.display = 'none';
-        
-        let hasUpdates = false;
-        
-        // Check for updates on the CURRENT branch
-        if (data.current_branch === 'main') {
-            if (data.main_latest_commit && data.main_latest_commit !== data.current_commit) {
-                hasUpdates = true;
-                document.getElementById('update-current-title').textContent = 'Stable Release (main)';
-                document.getElementById('update-current-desc').textContent = 'Latest: ' + data.main_latest_commit;
-                document.getElementById('btn-update-current').setAttribute('onclick', "applyAppUpdate('main')");
-                document.getElementById('btn-update-current').textContent = 'Install Stable';
-            }
-            
-            // Show switch to beta
-            document.getElementById('updates-switch-group').style.display = 'block';
-            document.getElementById('update-switch-title').textContent = 'Beta Release (beta)';
-            document.getElementById('update-switch-desc').textContent = 'Cutting edge features (Latest: ' + data.beta_latest_commit + ')';
-            document.getElementById('btn-update-switch').setAttribute('onclick', "applyAppUpdate('beta')");
-            document.getElementById('btn-update-switch').textContent = 'Switch to Beta';
-            
-        } else {
-            if (data.beta_latest_commit && data.beta_latest_commit !== data.current_commit) {
-                hasUpdates = true;
-                document.getElementById('update-current-title').textContent = 'Beta Release (beta)';
-                document.getElementById('update-current-desc').textContent = 'Latest: ' + data.beta_latest_commit;
-                document.getElementById('btn-update-current').setAttribute('onclick', "applyAppUpdate('beta')");
-                document.getElementById('btn-update-current').textContent = 'Install Beta Update';
-            }
-            
-            // Show switch to stable
-            document.getElementById('updates-switch-group').style.display = 'block';
-            document.getElementById('update-switch-title').textContent = 'Stable Release (main)';
-            document.getElementById('update-switch-desc').textContent = 'Recommended for most users (Latest: ' + data.main_latest_commit + ')';
-            document.getElementById('btn-update-switch').setAttribute('onclick', "applyAppUpdate('main')");
-            document.getElementById('btn-update-switch').textContent = 'Switch to Stable';
+        if (data.error) throw new Error(data.error);
+        updateStatus = data;
+
+        document.getElementById('update-current-version').textContent = 'v' + data.current_version;
+        const trackBadge = document.getElementById('update-current-track');
+        trackBadge.textContent = data.current_track === 'dev' ? 'local build' : data.current_track + ' track';
+        trackBadge.className = 'badge ' + (data.current_track === 'beta' ? 'badge-accent' : data.current_track === 'main' ? 'badge-green' : 'badge-dim');
+
+        if (!data.platform_asset) {
+            note.textContent = 'In-app updates are available for Linux and macOS builds only.';
+            note.hidden = false;
+            return;
         }
-        
-        if (hasUpdates) {
-            document.getElementById('updates-available-group').style.display = 'block';
+        if (data.current_track === 'dev') {
+            note.textContent = 'This is a local cargo build; install a release from GitHub to enable in-app updates. Latest stable: ' + releaseLabel(data.stable) + '. Latest beta: ' + releaseLabel(data.beta) + '.';
+            note.hidden = false;
+            return;
+        }
+
+        const onBeta = data.current_track === 'beta';
+        const current = onBeta ? data.beta : data.stable;
+        const other = onBeta ? data.stable : data.beta;
+
+        if (data.update_available && current && current.asset_url) {
+            document.getElementById('update-available-title').textContent = (onBeta ? 'Beta' : 'Stable') + ' update available';
+            document.getElementById('update-available-desc').textContent = releaseLabel(current);
+            const btn = document.getElementById('btn-update-current');
+            btn.textContent = 'Install ' + current.tag;
+            btn.onclick = () => applyAppUpdate(onBeta ? 'beta' : 'main', current.tag);
+            document.getElementById('updates-available-row').hidden = false;
         } else {
-            showToast('You are on the latest version of ' + data.current_branch + '!', 'success');
+            note.textContent = 'You are on the latest ' + data.current_track + ' release.';
+            note.hidden = false;
+        }
+
+        if (other && other.asset_url) {
+            document.getElementById('update-switch-title').textContent = onBeta ? 'Switch to stable' : 'Switch to beta';
+            document.getElementById('update-switch-desc').textContent = (onBeta ? 'Recommended for most users \u00b7 ' : 'Newer features, less tested \u00b7 ') + releaseLabel(other);
+            const btn = document.getElementById('btn-update-switch');
+            btn.textContent = 'Switch to ' + other.tag;
+            btn.onclick = () => applyAppUpdate(onBeta ? 'main' : 'beta', other.tag);
+            document.getElementById('updates-switch-row').hidden = false;
         }
     } catch (err) {
-        document.getElementById('updates-loading').style.display = 'none';
-        showToast('Error checking for updates: ' + err.message, 'error');
+        note.textContent = 'Could not check for updates: ' + err.message;
+        note.hidden = false;
     }
 }
 
-async function applyAppUpdate(branch) {
-    const proceed = await showConfirm('Install Update', 'This will download the latest ' + branch + ' branch, compile it, and restart the server. This may take a minute and the connection will drop. Proceed?');
-    if (!proceed) return;
-    
-    document.getElementById('updates-available-group').style.display = 'none';
-    document.getElementById('updates-installing').style.display = 'block';
-    
-    try {
-        // Stop the underlying llama-server first so it doesn't get orphaned when the process is replaced by exec()
-        if (serverRunning) {
-            await fetch('/api/stop', { method: 'POST' });
-        }
+let updateWatch = null;
 
-        fetch('/api/app/update/apply', {
+async function applyAppUpdate(track, tag) {
+    const proceed = await showConfirm('Install ' + tag,
+        'This downloads the ' + track + ' release ' + tag + ', stops llama-server, replaces the running binary and restarts. The page reconnects on its own.', 'Install');
+    if (!proceed) return;
+
+    document.getElementById('updates-available-row').hidden = true;
+    document.getElementById('updates-switch-row').hidden = true;
+    document.getElementById('updates-note').hidden = true;
+    const box = document.getElementById('updates-installing');
+    box.hidden = false;
+    document.getElementById('updates-phase').textContent = 'Starting\u2026';
+
+    try {
+        const res = await fetch('/api/app/update/apply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ branch })
+            body: JSON.stringify({ track }),
         });
-        
-        // Poll for server to come back online
-        let retries = 0;
-        const pollInterval = setInterval(async () => {
-            retries++;
-            if (retries < 3) return; // give it at least a few seconds to go down
-            
-            try {
-                const res = await fetch('/');
-                if (res.ok) {
-                    clearInterval(pollInterval);
-                    window.location.reload();
-                }
-            } catch (e) {
-                // still down
-            }
-        }, 2000);
-        
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
     } catch (err) {
-        showToast('Failed to trigger update: ' + err.message, 'error');
-        document.getElementById('updates-installing').style.display = 'none';
+        box.hidden = true;
+        showToast('Update failed to start: ' + err.message, 'error');
+        return;
     }
+
+    // Progress arrives over the WebSocket (`app_update`). Once the socket
+    // drops the process is restarting; poll until it answers, then reload.
+    clearInterval(updateWatch);
+    updateWatch = setInterval(async () => {
+        if (wsConnected) return;
+        try {
+            const res = await fetch('/', { cache: 'no-store' });
+            if (res.ok) {
+                clearInterval(updateWatch);
+                window.location.reload();
+            }
+        } catch (_) { /* still restarting */ }
+    }, 2000);
+}
+
+// Called from the WebSocket handler with the backend's update phase.
+let lastUpdatePhase = null;
+function renderUpdatePhase(phase) {
+    if (phase === lastUpdatePhase) return;
+    lastUpdatePhase = phase;
+    const box = document.getElementById('updates-installing');
+    if (!phase) {
+        box.hidden = true;
+        return;
+    }
+    if (phase.startsWith('Error')) {
+        box.hidden = true;
+        showToast('Update failed: ' + phase.slice(7), 'error');
+        return;
+    }
+    box.hidden = false;
+    document.getElementById('updates-phase').textContent = phase + '\u2026';
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2412,10 +2440,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const outCard = document.getElementById('monitor-output-card');
     if (outCard) {
-        const stored = localStorage.getItem('llama_monitor_output_open');
+        const stored = localStorage.getItem('llama_admin_monitor_output_open');
         if (stored !== null) outCard.open = stored === 'true';
         outCard.addEventListener('toggle', () => {
-            localStorage.setItem('llama_monitor_output_open', outCard.open);
+            localStorage.setItem('llama_admin_monitor_output_open', outCard.open);
         });
     }
 });

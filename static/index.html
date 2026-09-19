@@ -507,63 +507,44 @@
 
             <details class="modal-section" open>
                 <summary>App Updates</summary>
-                <div style="display: flex; justify-content: flex-end; margin-bottom: var(--space-3);">
-                    <button class="btn btn-sm" type="button" onclick="checkAppUpdates()">Check for Updates</button>
+                <div class="updates-toolbar">
+                    <span class="help-text">Releases are fetched from GitHub. Installing swaps the running binary and restarts; llama-server is stopped first.</span>
+                    <button class="btn btn-sm" type="button" onclick="checkAppUpdates()">Check for updates</button>
                 </div>
-                <div id="updates-card" style="font-size: 13px;">
-                    <div class="settings-group">
-                        <div class="settings-row">
-                            <div class="settings-info">
-                                <div class="settings-label">Current Version</div>
-                                <div class="settings-desc">The actively running build</div>
-                            </div>
-                            <div class="settings-control">
-                                <span class="badge badge-accent" id="update-current-version">v{{VERSION}}</span>
-                            </div>
+                <div class="settings-group" id="updates-card">
+                    <div class="settings-row">
+                        <div class="settings-info">
+                            <div class="settings-label">Running build</div>
+                            <div class="settings-desc" id="update-current-desc">Version and release track of this binary</div>
                         </div>
-                        <div class="settings-row">
-                            <div class="settings-info">
-                                <div class="settings-label">Active Branch</div>
-                                <div class="settings-desc">Your local git checkout</div>
-                            </div>
-                            <div class="settings-control">
-                                <span class="badge badge-neutral" id="update-current-branch">--</span>
-                            </div>
+                        <div class="settings-control updates-badges">
+                            <span class="badge badge-accent" id="update-current-version">v{{VERSION}}</span>
+                            <span class="badge badge-neutral" id="update-current-track">&mdash;</span>
                         </div>
                     </div>
-                    
-                    <div class="settings-group" id="updates-available-group" style="display: none; border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4);">
-                        <h3 style="margin-top:0; margin-bottom: var(--space-3); color: var(--fg-bright); font-size: 14px;">Update Available</h3>
-                        <div class="settings-row">
-                            <div class="settings-info">
-                                <div class="settings-label" id="update-current-title">New version available</div>
-                                <div class="settings-desc" id="update-current-desc">New commits are ready to install</div>
-                            </div>
-                            <div class="settings-control">
-                                <button class="btn btn-primary btn-sm" id="btn-update-current" onclick="">Install Update</button>
-                            </div>
+                    <div class="settings-row" id="updates-available-row" hidden>
+                        <div class="settings-info">
+                            <div class="settings-label" id="update-available-title">Update available</div>
+                            <div class="settings-desc" id="update-available-desc"></div>
+                        </div>
+                        <div class="settings-control">
+                            <button class="btn btn-primary btn-sm" id="btn-update-current" type="button">Install</button>
                         </div>
                     </div>
-                    
-                    <div class="settings-group" id="updates-switch-group" style="display: none; border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4);">
-                        <h3 style="margin-top:0; margin-bottom: var(--space-3); color: var(--fg-bright); font-size: 14px;">Switch Release Track</h3>
-                        <div class="settings-row">
-                            <div class="settings-info">
-                                <div class="settings-label" id="update-switch-title">Switch Track</div>
-                                <div class="settings-desc" id="update-switch-desc">Change between main and beta tracks</div>
-                            </div>
-                            <div class="settings-control">
-                                <button class="btn btn-sm" id="btn-update-switch" onclick="">Switch Track</button>
-                            </div>
+                    <div class="settings-row" id="updates-switch-row" hidden>
+                        <div class="settings-info">
+                            <div class="settings-label" id="update-switch-title">Switch track</div>
+                            <div class="settings-desc" id="update-switch-desc"></div>
+                        </div>
+                        <div class="settings-control">
+                            <button class="btn btn-sm" id="btn-update-switch" type="button">Switch</button>
                         </div>
                     </div>
-                    
-                    <div id="updates-loading" style="display: none; text-align: center; padding: var(--space-4); color: var(--fg-muted);">
-                        Checking GitHub...
-                    </div>
-                    <div id="updates-installing" style="display: none; text-align: center; padding: var(--space-4); color: var(--accent);">
-                        <div style="font-weight: bold; margin-bottom: 8px;">Installing Update...</div>
-                        <div style="font-size: 12px; color: var(--fg-muted);">The server is compiling and restarting. This page will refresh automatically.</div>
+                    <div class="status-box info" id="updates-note" hidden></div>
+                    <div class="status-box info updates-installing" id="updates-installing" hidden>
+                        <strong>Installing update</strong>
+                        <div id="updates-phase">Starting&hellip;</div>
+                        <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
                     </div>
                 </div>
             </details>

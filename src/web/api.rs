@@ -36,9 +36,9 @@ pub fn api_routes(
     let hf_search = api_hf_search();
     let hf_files = api_hf_files();
     let hf_download = api_hf_download(state.clone());
-    let v1_proxy = api_v1_proxy(state);
+    let v1_proxy = api_v1_proxy(state.clone());
     let app_update_check = api_app_update_check();
-    let app_update_apply = api_app_update_apply();
+    let app_update_apply = api_app_update_apply(state);
 
     start
         .or(stop)
@@ -783,38 +783,51 @@ fn api_app_update_check()
 -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "app" / "update" / "check")
         .and(warp::get())
-        .map(|| match update::check_updates() {
-            Ok(status) => {
-                warp::reply::with_status(warp::reply::json(&status), warp::http::StatusCode::OK)
-            }
-            Err(e) => {
-                let err = serde_json::json!({"error": e.to_string()});
-                warp::reply::with_status(
-                    warp::reply::json(&err),
-                    warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-                )
-            }
+        .and_then(|| async {
+            let reply = match update::check_updates().await {
+                Ok(status) => warp::reply::json(&status),
+                Err(e) => warp::reply::json(&serde_json::json!({"error": format!("{e:#}")})),
+            };
+            Ok::<_, warp::Rejection>(reply)
         })
 }
 
-fn api_app_update_apply()
--> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+fn api_app_update_apply(
+    state: AppState,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "app" / "update" / "apply")
         .and(warp::post())
         .and(warp::body::json())
-        .map(|body: std::collections::HashMap<String, String>| {
-            if let Some(branch) = body.get("branch") {
-                if branch == "main" || branch == "beta" {
-                    update::apply_update(branch.to_string());
-                    return warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"ok": true})),
-                        warp::http::StatusCode::OK,
-                    );
-                }
+        .and(warp::any().map(move || state.clone()))
+        .and_then(|body: serde_json::Value, state: AppState| async move {
+            let track = body
+                .get("track")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if track != "main" && track != "beta" {
+                return Ok::<_, warp::Rejection>(warp::reply::json(
+                    &serde_json::json!({"ok": false, "error": "track must be main or beta"}),
+                ));
             }
-            warp::reply::with_status(
-                warp::reply::json(&serde_json::json!({"ok": false, "error": "Invalid branch"})),
-                warp::http::StatusCode::BAD_REQUEST,
-            )
+            if state.update_phase.lock().unwrap().is_some() {
+                return Ok(warp::reply::json(
+                    &serde_json::json!({"ok": false, "error": "an update is already in progress"}),
+                ));
+            }
+            *state.update_phase.lock().unwrap() = Some("Starting".to_string());
+            // The work runs in the background; progress and errors reach the
+            // UI through the `app_update` field of the WebSocket payload.
+            tokio::spawn(async move {
+                if let Err(e) = update::apply_update(state.clone(), track).await {
+                    eprintln!("[update] failed: {e:#}");
+                    *state.update_phase.lock().unwrap() = Some(format!("Error: {e:#}"));
+                    // Leave the error visible briefly, then clear so a retry
+                    // is possible.
+                    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+                    *state.update_phase.lock().unwrap() = None;
+                }
+            });
+            Ok(warp::reply::json(&serde_json::json!({"ok": true})))
         })
 }

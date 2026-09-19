@@ -87,6 +87,8 @@ pub struct AppState {
     pub hf_download_progress: SharedDownloadProgress,
     pub bench_progress: SharedBenchProgress,
     pub system_stats: Arc<Mutex<SystemStats>>,
+    /// Progress of an in-app update in flight (see update.rs), or None.
+    pub update_phase: Arc<Mutex<Option<String>>>,
 }
 
 impl AppState {
@@ -124,6 +126,7 @@ impl AppState {
             hf_download_progress: Arc::new(Mutex::new(None)),
             bench_progress: Arc::new(Mutex::new(BenchProgress::default())),
             system_stats: Arc::new(Mutex::new(SystemStats::default())),
+            update_phase: Arc::new(Mutex::new(None)),
         }
     }
 
