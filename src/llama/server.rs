@@ -342,13 +342,20 @@ pub async fn start_server(
                     *watch_state.server_config.lock().unwrap() = None;
 
                     let quick = started.elapsed() < std::time::Duration::from_secs(20);
-                    let msg = if quick {
-                        format!(
-                            "llama-server exited during startup ({status}). Check the Logs tab."
-                        )
-                    } else {
-                        format!("llama-server exited unexpectedly ({status}).")
+                    let recent: Vec<String> = {
+                        let logs = watch_state.server_logs.lock().unwrap();
+                        logs.iter().rev().take(60).rev().cloned().collect()
                     };
+                    let diagnosis = diagnose_exit(&recent);
+                    let mut msg = if quick {
+                        format!("llama-server exited during startup ({status})")
+                    } else {
+                        format!("llama-server exited unexpectedly ({status})")
+                    };
+                    match &diagnosis {
+                        Some(d) => msg.push_str(&format!(": {d}")),
+                        None => msg.push_str(". See Process Output on Monitor for its last lines."),
+                    }
                     watch_state.push_log(format!("[monitor] {msg}"));
                     crate::applog::error(&msg);
                     *watch_state.server_error.lock().unwrap() = Some(msg);
@@ -362,6 +369,84 @@ pub async fn start_server(
     state.llama_poll_notify.notify_one();
 
     Ok(())
+}
+
+/// Turns llama-server's last error lines into one sentence for the crash
+/// notification and the event log, with a hint for the common causes.
+/// Returns None when nothing in `recent` looks like an error.
+pub fn diagnose_exit(recent: &[String]) -> Option<String> {
+    let is_error = |l: &str| {
+        let lower = l.to_ascii_lowercase();
+        l.contains(" E ")
+            || lower.contains("error")
+            || lower.contains("failed")
+            || lower.contains("not found")
+            || lower.contains("no such file")
+    };
+    let cleaned: Vec<String> = recent
+        .iter()
+        .filter(|l| !l.starts_with("[monitor]"))
+        .filter(|l| is_error(l))
+        .map(|l| strip_log_prefix(l))
+        .collect();
+    let joined = cleaned.join(" | ").to_ascii_lowercase();
+
+    let hint = if joined.contains("outofdevicememory")
+        || joined.contains("out of memory")
+        || joined.contains("failed to allocate")
+    {
+        Some(
+            "the model plus its KV cache does not fit in the selected device's memory. Lower the \
+             context size, quantise the KV cache (q8_0), pick a smaller quant, or add a device",
+        )
+    } else if joined.contains("unknown model architecture")
+        || joined.contains("unknown architecture")
+    {
+        Some("this llama.cpp build does not know the model's architecture; update llama.cpp")
+    } else if joined.contains("no such file") || joined.contains("failed to open") {
+        Some("a file the launch needs is missing; check the model, projector and draft paths")
+    } else if joined.contains("address already in use") {
+        Some("the port is taken by another process; change the port or stop that process")
+    } else if joined.contains("invalid argument") || joined.contains("unknown argument") {
+        Some("a flag was rejected; check Extra args and the other preset fields")
+    } else {
+        None
+    };
+
+    // The most specific line is usually the earliest error; ggml prints the
+    // allocation failure before llama-server's generic "exiting" line.
+    let first = cleaned
+        .iter()
+        .find(|l| !l.to_ascii_lowercase().contains("exiting due to"))
+        .or_else(|| cleaned.first())?;
+    let mut out = first.clone();
+    if out.len() > 220 {
+        out.truncate(217);
+        out.push_str("...");
+    }
+    if let Some(h) = hint {
+        out.push_str(" \u2014 ");
+        out.push_str(h);
+    }
+    Some(out)
+}
+
+/// Drops llama-server's `0.03.046.031 E srv ` timestamp/level/module prefix.
+fn strip_log_prefix(line: &str) -> String {
+    let mut parts = line.split_whitespace();
+    let first = parts.next().unwrap_or("");
+    let looks_timestamped = first.chars().all(|c| c.is_ascii_digit() || c == '.') && first.contains('.');
+    if !looks_timestamped {
+        return line.trim().to_string();
+    }
+    // timestamp, level letter, module tag, then the message
+    let rest: Vec<&str> = parts.collect();
+    let skip = rest
+        .iter()
+        .take(2)
+        .take_while(|w| w.len() <= 3)
+        .count();
+    rest[skip..].join(" ")
 }
 
 /// The llama-server binary a preset's `backend` selects. "cuda" means a
@@ -567,5 +652,38 @@ mod tests {
         assert_eq!(devices[1].id, "Vulkan1");
         assert_eq!(devices[1].free_mib, Some(9800));
         assert!(parse_device_list("Available devices:\n  (none)\n").is_empty());
+    }
+
+    #[test]
+    fn diagnoses_out_of_memory_with_hint() {
+        let recent = vec![
+            "0.00.186.478 I srv    load_model: loading model 'x.gguf'".to_string(),
+            "ggml_vulkan: Device memory allocation of size 811008000 failed.".to_string(),
+            "ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory".to_string(),
+            "0.03.010.681 E alloc_tensor_range: failed to allocate Vulkan1 buffer of size 811008000"
+                .to_string(),
+            "0.03.046.561 E srv  llama_server: exiting due to model loading error".to_string(),
+        ];
+        let d = diagnose_exit(&recent).unwrap();
+        assert!(d.starts_with("ggml_vulkan: Device memory allocation of size 811008000 failed."), "{d}");
+        assert!(d.contains("does not fit"), "{d}");
+    }
+
+    #[test]
+    fn diagnose_returns_none_without_errors() {
+        let recent = vec!["0.00.1 I srv  main: model loaded".to_string()];
+        assert_eq!(diagnose_exit(&recent), None);
+    }
+
+    #[test]
+    fn strips_timestamp_level_and_module() {
+        assert_eq!(
+            strip_log_prefix("0.03.046.031 E srv  llama_server: exiting"),
+            "llama_server: exiting"
+        );
+        assert_eq!(
+            strip_log_prefix("ggml_vulkan: allocateMemory failed"),
+            "ggml_vulkan: allocateMemory failed"
+        );
     }
 }

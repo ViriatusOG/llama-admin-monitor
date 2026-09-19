@@ -16,6 +16,7 @@ Backwards compatibility is preserved unless explicitly noted.
 - Update notifications: release builds check GitHub on load and every six hours, show an "Update" pill beside the version in the sidebar and a one-time toast per new release with an "Open updates" button that jumps to Settings > App Updates.
 
 ### Fixed
+- When llama-server exits, the notification and the Logs entry now quote its last error line and add a hint for common causes (model + KV cache not fitting the selected device, unknown architecture, missing file, port in use, rejected flag) instead of only saying to check the logs. The notification's button opens Process Output.
 - Generation and prompt speeds are now derived live from `/slots` token counters (smoothed), with the last finished task's average shown while idle. llama-server's `/metrics` gauges only carry a value on the scrape right after a task ends, so a long generation used to show "—".
 - Starting on a port that is already in use reports a clear message (and how to free it) instead of a warp panic.
 - The Settings dialog shows the llama-server path, working directory and models directory actually in effect, including values passed on the command line, instead of empty placeholders.

@@ -2300,7 +2300,7 @@ ws.onmessage = e => {
     const errBox = document.getElementById('monitor-error');
     if (d.server_error && d.server_error !== lastServerError) {
         lastServerError = d.server_error;
-        showToast(d.server_error, 'error', { label: 'View logs', onClick: () => switchTab('logs') });
+        showToast(d.server_error, 'error', { label: 'Process output', onClick: () => { switchTab('monitor'); const card = document.getElementById('monitor-output-card'); card.open = true; card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
         runtimePhase = 'idle';
     } else if (!d.server_error) {
         lastServerError = null;
