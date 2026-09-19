@@ -210,18 +210,23 @@ fn parse_releases_atom(xml: &str) -> Vec<GhRelease> {
             if !tag.starts_with('v') {
                 return None;
             }
-            let assets = ["linux-x86_64", "linux-aarch64", "macos-x86_64", "macos-aarch64"]
-                .iter()
-                .map(|p| {
-                    let name = format!("llama-admin-monitor-{p}");
-                    GhAsset {
-                        browser_download_url: format!(
-                            "https://github.com/{REPO}/releases/download/{tag}/{name}"
-                        ),
-                        name,
-                    }
-                })
-                .collect();
+            let assets = [
+                "linux-x86_64",
+                "linux-aarch64",
+                "macos-x86_64",
+                "macos-aarch64",
+            ]
+            .iter()
+            .map(|p| {
+                let name = format!("llama-admin-monitor-{p}");
+                GhAsset {
+                    browser_download_url: format!(
+                        "https://github.com/{REPO}/releases/download/{tag}/{name}"
+                    ),
+                    name,
+                }
+            })
+            .collect();
             Some(GhRelease {
                 prerelease: is_beta_tag(&tag),
                 draft: false,
@@ -527,7 +532,10 @@ mod tests {
         assert_eq!(releases[0].tag_name, "v2026.9.21-beta.2");
         assert!(releases[0].prerelease);
         assert!(!releases[1].prerelease);
-        assert_eq!(releases[0].published_at.as_deref(), Some("2026-09-19T09:32:44Z"));
+        assert_eq!(
+            releases[0].published_at.as_deref(),
+            Some("2026-09-19T09:32:44Z")
+        );
         let (stable, beta) = latest_per_track(&releases, Some("llama-admin-monitor-linux-x86_64"));
         assert_eq!(
             beta.unwrap().asset_url.as_deref(),
