@@ -500,7 +500,7 @@ pub fn launch_target(app_config: &AppConfig, backend: &str) -> Result<LaunchTarg
 }
 
 /// One offload device as printed by `llama-server --list-devices`.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GgmlDevice {
     pub id: String,
     pub name: String,

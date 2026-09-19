@@ -418,7 +418,8 @@ pub async fn install(
         set_progress(&state, |p| {
             p.phase = "Checking which devices it can see".to_string()
         });
-        let probe = crate::llama::server::list_devices(&state, &app_config, &format!("build:{id}"));
+        let backend_ref = format!("build:{id}");
+        let probe = crate::llama::server::list_devices(&state, &app_config, &backend_ref);
         match probe.await {
             Ok(devices) => build.devices = devices,
             Err(e) => build.device_check_error = Some(format!("{e:#}")),
