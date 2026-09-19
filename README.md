@@ -121,28 +121,37 @@ There is no built-in authentication. Keep it on a trusted network or behind an a
 
 ### Running as a service
 
-```ini
-# /etc/systemd/system/llama-admin-monitor.service
+To start the monitor at boot and keep it running, install a systemd unit that runs it as your own user (so the config directory, installed builds, the `sudo -n` rules below and the in-app updater all keep working):
+
+```bash
+sudo tee /etc/systemd/system/llama-admin-monitor.service >/dev/null <<'UNIT'
 [Unit]
 Description=Llama Admin Monitor
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=youruser
 WorkingDirectory=/home/youruser/llama-admin-monitor
-ExecStart=/home/youruser/llama-admin-monitor/target/release/llama-admin-monitor --port 7778
+ExecStart=/home/youruser/llama-admin-monitor/llama-admin-monitor \
+  --llama-server-path /home/youruser/llama.cpp/build/bin/llama-server \
+  --llama-server-cwd /home/youruser/llama.cpp/build/bin \
+  --models-dir /home/youruser/models \
+  --port 7778
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
-```
+UNIT
 
-```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now llama-admin-monitor
+systemctl status llama-admin-monitor
 ```
+
+Logs go to the journal (`journalctl -u llama-admin-monitor -f`). In-app updates work under systemd: the new binary re-executes in place and the unit keeps supervising it.
 
 ### Memory slot details
 
