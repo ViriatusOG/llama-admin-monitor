@@ -447,11 +447,6 @@ fn strip_log_prefix(line: &str) -> String {
     rest[skip..].join(" ")
 }
 
-/// The llama-server binary a preset's `backend` selects. "cuda" means a
-/// separate CUDA-only build living in a sibling `build-cuda` directory;
-/// anything else is the configured binary. A single build compiled with
-/// both GGML_CUDA and GGML_VULKAN needs no switching: its device list
-/// carries CUDA0 next to the Vulkan devices.
 /// Where a launch runs: the binary and its working directory. A preset's
 /// `backend` is one of: "" / "vulkan" (the configured binary and cwd),
 /// "cuda" (legacy sibling build-cuda tree), or "build:<id>" for a build
