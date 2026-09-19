@@ -114,7 +114,7 @@ pub fn parse_rocm_json(json: &serde_json::Value) -> Result<BTreeMap<String, GpuM
         let bus = card
             .get("PCI Bus")
             .and_then(|v| v.as_str())
-            .map(|b| super::procs::normalize_bus(b))
+            .map(super::procs::normalize_bus)
             .filter(|b| !b.is_empty());
         let display_name = amd_display_name(card).unwrap_or_else(|| card_name.clone());
         let display_name = unique_card_key(&metrics, &display_name);

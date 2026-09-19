@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
             let mut tick: u32 = 0;
             loop {
                 // Process accounting walks /proc; every 2 s is plenty.
-                if cfg!(target_os = "linux") && tick % 4 == 0 {
+                if cfg!(target_os = "linux") && tick.is_multiple_of(4) {
                     *procs.lock().unwrap() = probe.sample();
                 }
                 tick = tick.wrapping_add(1);
