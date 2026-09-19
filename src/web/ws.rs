@@ -78,14 +78,17 @@ pub fn ws_route(
 pub fn pi_ws_route(
     state: AppState,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    warp::path!("ws" / "pi").and(warp::ws()).map(move |ws: Ws| {
+    let pi = warp::path!("ws" / "pi").map(|| "pi");
+    let dsh = warp::path!("ws" / "dsh").map(|| "dsh");
+    pi.or(dsh).unify().and(warp::ws()).map(move |which: &'static str, ws: Ws| {
         let state = state.clone();
         ws.on_upgrade(move |socket| async move {
             let (mut ws_tx, mut ws_rx) = socket.split();
-            let session = state.pi.lock().unwrap().clone();
+            let slot = if which == "dsh" { &state.dsh } else { &state.pi };
+            let session = slot.lock().unwrap().clone();
             let Some(session) = session else {
                 let _ = ws_tx
-                    .send(Message::text(r#"{"error":"no pi session"}"#))
+                    .send(Message::text(&format!(r#"{{"error":"no {which} session"}}"#)))
                     .await;
                 return;
             };

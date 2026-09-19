@@ -7,6 +7,8 @@ and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+### Added
+- **DeepSeek page** (sidebar → Interact → DeepSeek): [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) run and embedded from the dashboard. dsh's web UI listens on the server's loopback only and refuses other bind addresses, so the monitor runs `dsh web` in a PTY (its log shows in a collapsible terminal), forwards the monitor's port + 1 (e.g. 7779) to it with a plain TCP proxy, passes matching `--trusted-host` authorities for dsh's browser-trust check, and shows the UI in a frame (or a new tab). Before every start it merges a `llama-admin-monitor` provider into `~/.dsh/settings.yaml` (`llm-pi-ai.providers`) with one model per preset via the monitor's `/v1` proxy, including the compat switches llama-server needs (`supportsDeveloperRole: false`, `maxTokensField: max_tokens`). **Install dsh** runs `npm install -g @deepseek-ai/dsh` in the terminal (Node.js 22+; the Pi installer provides one). `GET /api/dsh/status`, `POST /api/dsh/start|stop|install`, `/ws/dsh`.
 
 ## [1.1.2] - 2026-09-19
 ### Fixed

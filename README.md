@@ -61,7 +61,8 @@ Same dashboard in the **Mint** light theme:
 ### Optimisation
 - **Benchmark page** — sweeps tensor-split ratios, and optionally batch sizes, micro-batch sizes and thread counts, through `llama-bench`; reports prompt and generation throughput per combination, marks the fastest and applies it to a preset in one click. Large sweeps ask for confirmation with the run count; cancellable, keeping results so far
 
-### AI coding agent
+### AI coding agents
+- **DeepSeek page** — [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`), embedded. dsh is a web app that only listens on the server's loopback, so the monitor runs `dsh web` in a PTY (log in a collapsible terminal), forwards the monitor's port + 1 (7779 by default) to it and shows its UI in a frame or a new tab. Its `~/.dsh/settings.yaml` gets a `llama-admin-monitor` provider with one model per preset (through the monitor's `/v1` proxy, with the compat switches llama-server needs); pick it in dsh's model picker. **Install dsh** runs `npm install -g @deepseek-ai/dsh`. Allow the forwarded port through your firewall for LAN access.
 - **Pi page** — [pi](https://pi.dev), the minimal coding agent, runs in a real pseudo-terminal on the server and is rendered in the dashboard with xterm.js; the session survives page changes and reloads (recent scrollback is replayed on reattach). Pick a working directory, press Start, and pi comes up on a `llama-admin-monitor` provider the monitor writes into `~/.pi/agent/models.json`: one model entry per **preset**, named after the preset, pointing at the monitor's `/v1` proxy with the preset's context size. pi starts on the active preset; `/model` inside pi lists the others. When pi is not installed, **Install pi** runs its official installer in the same terminal. Only the pi process runs as the monitor's user, with the monitor's environment.
 
 ### Interface
@@ -230,6 +231,7 @@ The sidebar groups the workspace the way LLama-GUI does:
 - **Tune → Benchmark** — tensor-split (and batch/thread) sweeps with one-click apply.
 - **Interact → Chat** — streaming chat against the running server.
 - **Interact → Pi** — the pi coding agent in an embedded terminal, working in a directory of your choice against the loaded model.
+- **Interact → DeepSeek** — DeepSeek Harness's web UI embedded, with its process log underneath.
 - **Library → Models** — the models directory with VRAM fit and Hugging Face provenance, download and delete.
 - **Library → Install** — prebuilt llama.cpp builds per backend, with update-in-place when upstream publishes a newer tag.
 
@@ -298,6 +300,11 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `POST` | `/api/pi/start` | Start pi in `{"cwd", "cols", "rows"}` after refreshing its models.json provider |
 | `POST` | `/api/pi/install` | Run pi's installer (`curl -fsSL https://pi.dev/install.sh \| sh`) in the terminal |
 | `POST` | `/api/pi/stop` | Kill the pi session |
+| `GET` | `/api/dsh/status` | Whether dsh is installed, npm availability, session and forwarded port |
+| `POST` | `/api/dsh/start` | Start `dsh web` in `{"cwd"}`, refresh its settings.yaml provider, and forward the monitor's port + 1 to it |
+| `POST` | `/api/dsh/install` | Run `npm install -g @deepseek-ai/dsh` in the terminal |
+| `POST` | `/api/dsh/stop` | Stop dsh and the port forwarder |
+| `GET` | `/ws/dsh` | Terminal WebSocket for dsh's output (same protocol as `/ws/pi`) |
 | `GET` | `/ws/pi` | Terminal WebSocket: binary frames are PTY output/keystrokes, text frames `{"input"}` or `{"resize":[cols,rows]}` |
 | `GET` | `/api/app/logs?after=N` | The monitor's own event log (entries newer than sequence N) |
 | `GET` | `/api/app/update/check` | Running version/track and the latest stable and beta releases |
@@ -328,6 +335,7 @@ src/
     mod.rs             -- Host CPU / memory / disk sampler (/proc, df, dmidecode)
     disk.rs            -- Physical disk identity, hwmon temperature, SMART via smartctl
   pi.rs                -- pi coding agent in a PTY (portable-pty), scrollback, models.json provider
+  dsh.rs               -- DeepSeek Harness: settings.yaml provider, TCP port forwarder, trusted hosts
   update.rs            -- Release-track updater: GitHub Releases, verify, swap, re-exec
   presets/
     mod.rs             -- ModelPreset, CRUD, file persistence

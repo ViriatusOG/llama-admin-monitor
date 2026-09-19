@@ -104,6 +104,11 @@
                     Pi
                     <span class="nav-count" id="nav-count-pi"></span>
                 </button>
+                <button class="nav-item" data-section="dsh">
+                    <span class="icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><polyline points="7 8 10 10 7 12"/><line x1="12" y1="12" x2="16" y2="12"/></svg></span>
+                    DeepSeek
+                    <span class="nav-count" id="nav-count-dsh"></span>
+                </button>
             </div>
 
             <div class="nav-group" role="group" aria-labelledby="nav-library">
@@ -559,6 +564,50 @@
                         <p>Pick a working directory and press <strong>Start pi</strong>. The session keeps running if you leave this page; come back and it reattaches.</p>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="section-panel" id="section-dsh" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">DeepSeek Harness</h1>
+                    <div class="page-title-sub"><a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">dsh</a>, DeepSeek's agent harness, running on this server with its web UI embedded here and your presets as its models through the monitor's OpenAI-compatible API.</div>
+                </div>
+                <div class="page-actions">
+                    <span class="badge badge-dim" id="dsh-status-badge">Checking&hellip;</span>
+                    <a class="btn btn-sm" id="dsh-open" href="#" target="_blank" rel="noopener" hidden>Open in new tab</a>
+                    <button class="btn btn-sm" type="button" onclick="refreshDshStatus()">Refresh</button>
+                </div>
+            </div>
+            <div class="card pi-card">
+                <div class="pi-toolbar">
+                    <label class="pi-field">
+                        <span class="form-label">Workspace directory</span>
+                        <span class="pi-field-row">
+                            <input type="text" id="dsh-cwd" placeholder="/home/you/project" spellcheck="false">
+                            <button class="btn btn-sm" type="button" onclick="browseDshCwd()">Browse</button>
+                        </span>
+                    </label>
+                    <div class="pi-buttons">
+                        <button class="btn btn-sm btn-primary" type="button" id="dsh-btn-start" onclick="startDsh()">Start dsh</button>
+                        <button class="btn btn-sm" type="button" id="dsh-btn-stop" onclick="stopDsh()" hidden>Stop</button>
+                        <button class="btn btn-sm btn-primary" type="button" id="dsh-btn-install" onclick="installDsh()" hidden>Install dsh</button>
+                    </div>
+                </div>
+                <p class="help-text" id="dsh-note"></p>
+                <div class="dsh-frame-wrap" id="dsh-frame-wrap" hidden>
+                    <iframe id="dsh-frame" class="dsh-frame" title="DeepSeek Harness" allow="clipboard-read; clipboard-write"></iframe>
+                </div>
+                <details class="dsh-log" id="dsh-log-details" open>
+                    <summary>dsh process output</summary>
+                    <div class="pi-terminal-wrap dsh-terminal-wrap" id="dsh-terminal-wrap">
+                        <div class="pi-terminal" id="dsh-terminal"></div>
+                        <div class="empty-state pi-terminal-empty" id="dsh-terminal-empty">
+                            <div class="empty-state-title">No dsh session</div>
+                            <p>Pick a workspace directory and press <strong>Start dsh</strong>. Its log appears here; the web UI appears above once it is up.</p>
+                        </div>
+                    </div>
+                </details>
             </div>
         </div>
 

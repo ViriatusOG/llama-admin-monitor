@@ -103,17 +103,22 @@ pub fn user_bin_dirs() -> Vec<PathBuf> {
 /// directories we do not know about). The shell lookup is the slow path,
 /// so its answer is cached for a minute.
 pub fn find_pi() -> Option<PathBuf> {
-    if let Some(p) = crate::llama::server::find_on_path(std::path::Path::new("pi")) {
+    find_program("pi")
+}
+
+/// Same lookup for any user-installed tool (dsh, npm, node...).
+pub fn find_program(name: &str) -> Option<PathBuf> {
+    if let Some(p) = crate::llama::server::find_on_path(std::path::Path::new(name)) {
         return Some(p);
     }
     if let Some(p) = user_bin_dirs()
         .into_iter()
-        .map(|d| d.join("pi"))
+        .map(|d| d.join(name))
         .find(|p| p.is_file())
     {
         return Some(p);
     }
-    login_shell_lookup("pi")
+    login_shell_lookup(name)
 }
 
 /// `bash -lc 'command -v NAME'`, cached per name for 60 s.
@@ -175,6 +180,10 @@ pub fn child_path(program: Option<&std::path::Path>) -> std::ffi::OsString {
     let mut seen = std::collections::HashSet::new();
     dirs.retain(|d| seen.insert(d.clone()));
     std::env::join_paths(dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
+pub fn program_version(path: &PathBuf) -> Option<String> {
+    pi_version(path)
 }
 
 fn pi_version(path: &PathBuf) -> Option<String> {
@@ -347,15 +356,29 @@ fn write_models_json_at(
 
 /// Spawns `program args` in a fresh PTY and installs it as the session,
 /// replacing (and killing) any previous one.
-pub fn start(
-    shared: &Shared,
-    program: &str,
-    args: &[String],
-    cwd: PathBuf,
-    label: String,
-    cols: u16,
-    rows: u16,
-) -> Result<()> {
+/// What to run in the PTY.
+pub struct Launch {
+    pub program: String,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    /// Shown in the UI and in the exit note, e.g. "pi" or "pi installer".
+    pub label: String,
+    pub cols: u16,
+    pub rows: u16,
+    pub env: Vec<(String, String)>,
+}
+
+pub fn start(shared: &Shared, launch: Launch) -> Result<()> {
+    let Launch {
+        program,
+        args,
+        cwd,
+        label,
+        cols,
+        rows,
+        env,
+    } = launch;
+    let program = program.as_str();
     stop(shared);
     let pty = native_pty_system();
     let pair = pty
@@ -367,10 +390,13 @@ pub fn start(
         })
         .context("cannot open a pseudo-terminal")?;
     let mut cmd = CommandBuilder::new(program);
-    cmd.args(args);
+    cmd.args(&args);
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
     cmd.env("PATH", child_path(Some(std::path::Path::new(program))));
+    for (k, v) in &env {
+        cmd.env(k, v);
+    }
     cmd.env("COLORTERM", "truecolor");
     let child = pair
         .slave

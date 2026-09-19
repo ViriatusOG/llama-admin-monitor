@@ -5,6 +5,7 @@
 mod applog;
 mod cli;
 mod config;
+mod dsh;
 mod gpu;
 mod llama;
 mod models;

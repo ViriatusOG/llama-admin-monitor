@@ -42,6 +42,7 @@ pub fn api_routes(
     let devices = api_devices(state.clone(), app_config.clone());
     let builds = api_builds(state.clone(), app_config.clone());
     let pi = api_pi(state.clone(), app_config.clone());
+    let dsh = api_dsh(state.clone(), app_config.clone());
     let app_update_apply = api_app_update_apply(state);
     // Boxed so the outer .or() chain stays shallow enough for the compiler.
     let app = app_update_check
@@ -50,6 +51,7 @@ pub fn api_routes(
         .or(devices)
         .or(builds)
         .or(pi)
+        .or(dsh)
         .boxed();
 
     start
@@ -1318,12 +1320,15 @@ fn api_pi(
             ];
             match pi::start(
                 &state.pi,
-                &program.display().to_string(),
-                &args,
-                cwd.clone(),
-                "pi".to_string(),
-                cols,
-                rows,
+                pi::Launch {
+                    program: program.display().to_string(),
+                    args,
+                    cwd: cwd.clone(),
+                    label: "pi".to_string(),
+                    cols,
+                    rows,
+                    env: Vec::new(),
+                },
             ) {
                 Ok(()) => {
                     crate::applog::info(format!("Started pi in {}", cwd.display()));
@@ -1350,12 +1355,15 @@ fn api_pi(
             ];
             match pi::start(
                 &install_state.pi,
-                "sh",
-                &args,
-                home,
-                "pi installer".to_string(),
-                cols,
-                rows,
+                pi::Launch {
+                    program: "sh".to_string(),
+                    args,
+                    cwd: home,
+                    label: "pi installer".to_string(),
+                    cols,
+                    rows,
+                    env: Vec::new(),
+                },
             ) {
                 Ok(()) => {
                     crate::applog::info(
@@ -1374,6 +1382,187 @@ fn api_pi(
         .and(warp::post())
         .map(move || {
             pi::stop(&stop_state.pi);
+            warp::reply::json(&serde_json::json!({"ok": true}))
+        });
+
+    status.or(start).or(install).or(stop)
+}
+
+/// DeepSeek Harness: status, start/stop (`dsh web` in a PTY plus a port
+/// forwarder so the LAN can reach its loopback-only UI), and install via
+/// npm.
+fn api_dsh(
+    state: AppState,
+    app_config: Arc<AppConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    use crate::{dsh, pi};
+
+    fn proxy_port(app_config: &AppConfig) -> u16 {
+        app_config.port.wrapping_add(1).max(1024)
+    }
+
+    let status_state = state.clone();
+    let status_config = app_config.clone();
+    let status = warp::path!("api" / "dsh" / "status")
+        .and(warp::get())
+        .map(move || {
+            let mut st = dsh::status(&status_state.dsh, &status_state.dsh_proxy);
+            if st.cwd.is_none() {
+                let wd = status_state.ui_settings.lock().unwrap().dsh_workdir.clone();
+                st.cwd = Some(if wd.is_empty() {
+                    dirs::home_dir()
+                        .map(|h| h.display().to_string())
+                        .unwrap_or_default()
+                } else {
+                    wd
+                });
+            }
+            let mut v = serde_json::to_value(&st).unwrap_or_default();
+            v["planned_proxy_port"] = serde_json::json!(proxy_port(&status_config));
+            warp::reply::json(&v)
+        });
+
+    let start_state = state.clone();
+    let start_config = app_config.clone();
+    let start = warp::path!("api" / "dsh" / "start")
+        .and(warp::post())
+        .and(warp::header::optional::<String>("host"))
+        .and(warp::body::json())
+        .and_then(move |host: Option<String>, body: serde_json::Value| {
+            let state = start_state.clone();
+            let app_config = start_config.clone();
+            async move {
+                let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
+                let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
+                let cwd_str = body
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| state.ui_settings.lock().unwrap().dsh_workdir.clone());
+                let cwd = if cwd_str.is_empty() {
+                    dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
+                } else {
+                    std::path::PathBuf::from(&cwd_str)
+                };
+                let fail = |msg: String| {
+                    Ok::<_, warp::Rejection>(warp::reply::json(
+                        &serde_json::json!({"ok": false, "error": msg}),
+                    ))
+                };
+                if !cwd.is_dir() {
+                    return fail(format!("{} is not a directory", cwd.display()));
+                }
+                {
+                    let mut settings = state.ui_settings.lock().unwrap();
+                    if settings.dsh_workdir != cwd_str {
+                        settings.dsh_workdir = cwd_str.clone();
+                        let _ = app_state::save_ui_settings(&state.ui_settings_path, &settings);
+                    }
+                }
+                let Some(program) = dsh::find_dsh() else {
+                    return fail("dsh is not installed; use Install dsh first".to_string());
+                };
+                let presets = state.presets.lock().unwrap().clone();
+                let entries = pi::entries_from_presets(&presets);
+                if let Err(e) = dsh::write_settings(app_config.port, &entries) {
+                    return fail(format!("cannot write dsh settings.yaml: {e:#}"));
+                }
+                let port = proxy_port(&app_config);
+                if let Err(e) = dsh::start_proxy(&state.dsh_proxy, port).await {
+                    return fail(format!("{e:#}"));
+                }
+                let mut args = vec![
+                    "web".to_string(),
+                    "--no-open".to_string(),
+                    "--port".to_string(),
+                    dsh::DSH_PORT.to_string(),
+                ];
+                for h in dsh::trusted_hosts(host.as_deref(), port) {
+                    args.push("--trusted-host".to_string());
+                    args.push(h);
+                }
+                match pi::start(
+                    &state.dsh,
+                    pi::Launch {
+                        program: program.display().to_string(),
+                        args,
+                        cwd: cwd.clone(),
+                        label: "dsh".to_string(),
+                        cols,
+                        rows,
+                        env: vec![(
+                            dsh::API_KEY_ENV.to_string(),
+                            "llama-admin-monitor".to_string(),
+                        )],
+                    },
+                ) {
+                    Ok(()) => {
+                        crate::applog::info(format!(
+                            "Started dsh web in {} (forwarding port {port} to 127.0.0.1:{})",
+                            cwd.display(),
+                            dsh::DSH_PORT
+                        ));
+                        Ok(warp::reply::json(
+                            &serde_json::json!({"ok": true, "proxy_port": port}),
+                        ))
+                    }
+                    Err(e) => {
+                        dsh::stop_proxy(&state.dsh_proxy);
+                        fail(format!("{e:#}"))
+                    }
+                }
+            }
+        });
+
+    let install_state = state.clone();
+    let install = warp::path!("api" / "dsh" / "install")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(move |body: serde_json::Value| {
+            let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
+            let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            let Some(npm) = pi::find_program("npm") else {
+                return warp::reply::json(&serde_json::json!({
+                    "ok": false,
+                    "error": "npm was not found; install Node.js 22+ (installing pi also provides one) and try again"
+                }));
+            };
+            let args = vec![
+                "install".to_string(),
+                "-g".to_string(),
+                "@deepseek-ai/dsh".to_string(),
+            ];
+            match pi::start(
+                &install_state.dsh,
+                pi::Launch {
+                    program: npm.display().to_string(),
+                    args,
+                    cwd: home,
+                    label: "dsh installer".to_string(),
+                    cols,
+                    rows,
+                    env: Vec::new(),
+                },
+            ) {
+                Ok(()) => {
+                    crate::applog::info("Installing dsh (npm install -g @deepseek-ai/dsh)");
+                    warp::reply::json(&serde_json::json!({"ok": true}))
+                }
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+                }
+            }
+        });
+
+    let stop_state = state.clone();
+    let stop = warp::path!("api" / "dsh" / "stop")
+        .and(warp::post())
+        .map(move || {
+            pi::stop(&stop_state.dsh);
+            dsh::stop_proxy(&stop_state.dsh_proxy);
             warp::reply::json(&serde_json::json!({"ok": true}))
         });
 

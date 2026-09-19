@@ -1,6 +1,6 @@
 // ─── App shell: navigation + responsive drawer ────────────────────────────
 
-const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'pi', 'models', 'install'];
+const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'pi', 'dsh', 'models', 'install'];
 let activeSection = 'monitor';
 
 function switchTab(name) {
@@ -21,6 +21,7 @@ function switchTab(name) {
     if (name === 'presets') renderPresetsPage();
     if (name === 'install') loadInstallPage(false);
     if (name === 'pi') { openPiPage(); setTimeout(piResize, 50); }
+    if (name === 'dsh') openDshPage();
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
     if (name === 'logs') { logsUnread = 0; renderLogsNav(); const el = document.getElementById('app-log'); el.scrollTop = el.scrollHeight; }
 
@@ -3203,13 +3204,9 @@ async function useBuildInSettings(id) {
     }
 }
 
-// --- Pi page: xterm.js attached to a PTY on the server over /ws/pi ---
+// --- Terminal sessions (pi, dsh): xterm.js attached to a server PTY ---
 
-let piTerm = null;
-let piFit = null;
-let piSocket = null;
-let piStatus = null;
-let piScriptsLoading = null;
+let termScriptsLoading = null;
 
 function loadScriptOnce(src) {
     return new Promise((resolve, reject) => {
@@ -3222,18 +3219,18 @@ function loadScriptOnce(src) {
     });
 }
 
-// xterm.js is vendored but only fetched when the page is first opened.
+// xterm.js is vendored but only fetched when a terminal page is first opened.
 function ensureXterm() {
     if (window.Terminal && window.FitAddon) return Promise.resolve();
-    if (!piScriptsLoading) {
+    if (!termScriptsLoading) {
         const v = encodeURIComponent((document.querySelector('script[src^="/app.js"]') || {}).src?.split('v=')[1] || '');
-        piScriptsLoading = loadScriptOnce('/vendor/xterm.js?v=' + v)
+        termScriptsLoading = loadScriptOnce('/vendor/xterm.js?v=' + v)
             .then(() => loadScriptOnce('/vendor/xterm-addon-fit.js?v=' + v));
     }
-    return piScriptsLoading;
+    return termScriptsLoading;
 }
 
-function piTheme() {
+function termTheme() {
     const css = getComputedStyle(document.documentElement);
     const v = n => css.getPropertyValue(n).trim();
     return {
@@ -3244,9 +3241,117 @@ function piTheme() {
     };
 }
 
+// One per page: {name, hostId, emptyId, sectionId, wsPath, term, fit, socket, lastSize}
+const termSessions = {};
+
+function termSession(name) {
+    return termSessions[name];
+}
+
+function defineTermSession(name, hostId, emptyId, sectionId) {
+    termSessions[name] = { name, hostId, emptyId, sectionId, wsPath: '/ws/' + name, term: null, fit: null, socket: null, lastSize: '' };
+    return termSessions[name];
+}
+
+function termSize(ts) {
+    if (ts && ts.fit && ts.term) {
+        try { ts.fit.fit(); } catch (_) {}
+        return { cols: ts.term.cols, rows: ts.term.rows };
+    }
+    return { cols: 120, rows: 32 };
+}
+
+function createTerm(ts) {
+    if (ts.term || !window.Terminal) return;
+    const host = document.getElementById(ts.hostId);
+    ts.term = new window.Terminal({
+        cursorBlink: true,
+        fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace',
+        fontSize: 13,
+        scrollback: 5000,
+        theme: termTheme(),
+        allowProposedApi: true,
+    });
+    ts.fit = new window.FitAddon.FitAddon();
+    ts.term.loadAddon(ts.fit);
+    ts.term.open(host);
+    ts.term.onData(data => {
+        if (ts.socket && ts.socket.readyState === WebSocket.OPEN) ts.socket.send(JSON.stringify({ input: data }));
+    });
+    ts.term.onBinary(data => {
+        if (ts.socket && ts.socket.readyState === WebSocket.OPEN) {
+            const bytes = new Uint8Array(data.length);
+            for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 255;
+            ts.socket.send(bytes);
+        }
+    });
+    window.addEventListener('resize', () => termResize(ts));
+    if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => termResize(ts));
+        ro.observe(host.parentElement || host);
+        const screen = host.querySelector('.xterm-screen');
+        if (screen) ro.observe(screen);
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => setTimeout(() => termResize(ts), 50));
+    const empty = document.getElementById(ts.emptyId);
+    if (empty) empty.hidden = true;
+    termResize(ts);
+    setTimeout(() => termResize(ts), 100);
+    setTimeout(() => termResize(ts), 600);
+}
+
+function termResize(ts) {
+    if (!ts || !ts.term || !ts.fit || document.getElementById(ts.sectionId).hidden) return;
+    try {
+        const dims = ts.fit.proposeDimensions();
+        if (!dims || !dims.cols || !dims.rows) return;
+        if (dims.cols !== ts.term.cols || dims.rows !== ts.term.rows) ts.term.resize(dims.cols, dims.rows);
+    } catch (_) { return; }
+    const key = ts.term.cols + 'x' + ts.term.rows;
+    if (ts.socket && ts.socket.readyState === WebSocket.OPEN && key !== ts.lastSize) {
+        ts.lastSize = key;
+        ts.socket.send(JSON.stringify({ resize: [ts.term.cols, ts.term.rows] }));
+    }
+}
+
+async function attachTerm(ts, onClose) {
+    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
+    createTerm(ts);
+    if (!ts.term) return;
+    if (ts.socket && (ts.socket.readyState === WebSocket.OPEN || ts.socket.readyState === WebSocket.CONNECTING)) return;
+    ts.term.reset();
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ts.wsPath);
+    ws.binaryType = 'arraybuffer';
+    ts.socket = ws;
+    ws.onopen = () => { ts.lastSize = ''; termResize(ts); setTimeout(() => termResize(ts), 150); };
+    ws.onmessage = e => {
+        if (typeof e.data === 'string') {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.error) ts.term.write('\r\n\x1b[2m[' + msg.error + ']\x1b[0m\r\n');
+            } catch (_) {}
+            return;
+        }
+        ts.term.write(new Uint8Array(e.data));
+    };
+    ws.onclose = () => {
+        if (ts.socket === ws) ts.socket = null;
+        if (onClose) onClose();
+    };
+}
+
+function detachTerm(ts) {
+    if (ts && ts.socket) { try { ts.socket.close(); } catch (_) {} ts.socket = null; }
+}
+
+// --- Pi page ---
+
+const piSession = defineTermSession('pi', 'pi-terminal', 'pi-terminal-empty', 'section-pi');
+let piStatus = null;
+
 async function openPiPage() {
     await refreshPiStatus();
-    if (piStatus && piStatus.running) attachPiTerminal();
+    if (piStatus && piStatus.running) attachTerm(piSession, refreshPiStatus).then(() => piSession.term && piSession.term.focus());
 }
 
 async function refreshPiStatus() {
@@ -3269,7 +3374,7 @@ function renderPiStatus() {
     document.getElementById('pi-btn-start').hidden = !st.installed;
     document.getElementById('pi-btn-stop').hidden = !st.running;
     document.getElementById('pi-btn-start').textContent = st.running && st.label === 'pi' ? 'Restart pi' : 'Start pi';
-    document.getElementById('nav-count-pi').textContent = st.running ? '\u25cf' : '';
+    document.getElementById('nav-count-pi').textContent = st.running ? '●' : '';
     if (st.running) {
         badge.textContent = (st.label || 'pi') + ' running';
         badge.className = 'badge badge-green';
@@ -3290,22 +3395,13 @@ function renderPiStatus() {
 }
 
 function browsePiCwd() {
-    // Reuse the Settings file browser in directory mode.
     openFileBrowser('pi-cwd', 'dir');
-}
-
-function piSize() {
-    if (piFit && piTerm) {
-        try { piFit.fit(); } catch (_) {}
-        return { cols: piTerm.cols, rows: piTerm.rows };
-    }
-    return { cols: 120, rows: 32 };
 }
 
 async function startPi() {
     await ensureXterm().catch(err => { showToast(err.message, 'error'); });
-    createPiTerminal();
-    const size = piSize();
+    createTerm(piSession);
+    const size = termSize(piSession);
     const cwd = document.getElementById('pi-cwd').value.trim();
     try {
         const res = await fetch('/api/pi/start', {
@@ -3319,7 +3415,7 @@ async function startPi() {
         return;
     }
     await refreshPiStatus();
-    attachPiTerminal();
+    attachTerm(piSession, refreshPiStatus).then(() => piSession.term && piSession.term.focus());
 }
 
 async function installPi() {
@@ -3327,8 +3423,8 @@ async function installPi() {
         'Run pi\'s installer on this server (curl -fsSL https://pi.dev/install.sh | sh) in the terminal below?', 'Install');
     if (!proceed) return;
     await ensureXterm().catch(err => { showToast(err.message, 'error'); });
-    createPiTerminal();
-    const size = piSize();
+    createTerm(piSession);
+    const size = termSize(piSession);
     try {
         const res = await fetch('/api/pi/install', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3341,102 +3437,145 @@ async function installPi() {
         return;
     }
     await refreshPiStatus();
-    attachPiTerminal();
+    attachTerm(piSession, refreshPiStatus).then(() => piSession.term && piSession.term.focus());
 }
 
 async function stopPi() {
-    try {
-        await fetch('/api/pi/stop', { method: 'POST' });
-    } catch (_) {}
-    detachPiTerminal();
+    try { await fetch('/api/pi/stop', { method: 'POST' }); } catch (_) {}
+    detachTerm(piSession);
     await refreshPiStatus();
 }
 
-function createPiTerminal() {
-    if (piTerm || !window.Terminal) return;
-    const host = document.getElementById('pi-terminal');
-    piTerm = new window.Terminal({
-        cursorBlink: true,
-        fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace',
-        fontSize: 13,
-        scrollback: 5000,
-        theme: piTheme(),
-        allowProposedApi: true,
-    });
-    piFit = new window.FitAddon.FitAddon();
-    piTerm.loadAddon(piFit);
-    piTerm.open(host);
-    piTerm.onData(data => {
-        if (piSocket && piSocket.readyState === WebSocket.OPEN) piSocket.send(JSON.stringify({ input: data }));
-    });
-    piTerm.onBinary(data => {
-        if (piSocket && piSocket.readyState === WebSocket.OPEN) {
-            const bytes = new Uint8Array(data.length);
-            for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 255;
-            piSocket.send(bytes);
-        }
-    });
-    window.addEventListener('resize', piResize);
-    // xterm measures its cell size lazily, so the first fit can be a no-op;
-    // watch the container and re-fit whenever it has a real size.
-    if (window.ResizeObserver) {
-        const ro = new ResizeObserver(() => piResize());
-        ro.observe(document.getElementById('pi-terminal-wrap'));
-        // xterm re-measures its cells when the webfont finishes loading,
-        // which shrinks the rendered screen without the container moving;
-        // watching the screen element catches that and any other re-layout.
-        const screen = host.querySelector('.xterm-screen');
-        if (screen) ro.observe(screen);
-    }
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => setTimeout(piResize, 50));
-    document.getElementById('pi-terminal-empty').hidden = true;
-    piResize();
-    setTimeout(piResize, 100);
-    setTimeout(piResize, 600);
+function piResize() { termResize(piSession); }
+
+// --- DeepSeek Harness page: dsh's own web UI in a frame, its log in a terminal ---
+
+const dshSession = defineTermSession('dsh', 'dsh-terminal', 'dsh-terminal-empty', 'section-dsh');
+let dshStatus = null;
+let dshFrameLoaded = false;
+
+function dshUrl(port) {
+    return location.protocol + '//' + location.hostname + ':' + port + '/';
 }
 
-let piLastSize = '';
+async function openDshPage() {
+    await refreshDshStatus();
+    if (dshStatus && dshStatus.running) attachTerm(dshSession, refreshDshStatus);
+    setTimeout(() => termResize(dshSession), 50);
+}
 
-function piResize() {
-    if (!piTerm || !piFit || document.getElementById('section-pi').hidden) return;
+async function refreshDshStatus() {
     try {
-        const dims = piFit.proposeDimensions();
-        if (!dims || !dims.cols || !dims.rows) return;
-        if (dims.cols !== piTerm.cols || dims.rows !== piTerm.rows) piTerm.resize(dims.cols, dims.rows);
-    } catch (_) { return; }
-    const key = piTerm.cols + 'x' + piTerm.rows;
-    if (piSocket && piSocket.readyState === WebSocket.OPEN && key !== piLastSize) {
-        piLastSize = key;
-        piSocket.send(JSON.stringify({ resize: [piTerm.cols, piTerm.rows] }));
+        const res = await fetch('/api/dsh/status');
+        dshStatus = await res.json();
+    } catch (err) {
+        dshStatus = { installed: false, running: false, error: err.message };
     }
+    renderDshStatus();
 }
 
-async function attachPiTerminal() {
+function renderDshStatus() {
+    const st = dshStatus || {};
+    const badge = document.getElementById('dsh-status-badge');
+    const note = document.getElementById('dsh-note');
+    const cwd = document.getElementById('dsh-cwd');
+    if (!cwd.value && st.cwd) cwd.value = st.cwd;
+    const isApp = st.running && st.label === 'dsh';
+    document.getElementById('dsh-btn-install').hidden = st.installed;
+    document.getElementById('dsh-btn-start').hidden = !st.installed;
+    document.getElementById('dsh-btn-stop').hidden = !st.running;
+    document.getElementById('dsh-btn-start').textContent = isApp ? 'Restart dsh' : 'Start dsh';
+    document.getElementById('nav-count-dsh').textContent = st.running ? '●' : '';
+    const port = st.proxy_port || st.planned_proxy_port;
+    const url = port ? dshUrl(port) : '';
+    const open = document.getElementById('dsh-open');
+    open.hidden = !isApp;
+    open.href = url || '#';
+    if (st.running) {
+        badge.textContent = (st.label || 'dsh') + ' running';
+        badge.className = 'badge badge-green';
+    } else if (st.installed) {
+        badge.textContent = 'dsh ' + (st.version || 'installed').replace(/^dsh\s+/i, '');
+        badge.className = 'badge badge-neutral';
+    } else {
+        badge.textContent = 'dsh not installed';
+        badge.className = 'badge badge-yellow';
+    }
+    if (!st.installed) {
+        note.innerHTML = 'DeepSeek Harness is not on this server yet. <strong>Install dsh</strong> runs <code>npm install -g @deepseek-ai/dsh</code> in the terminal below' + (st.npm ? '' : ' (needs Node.js 22+; installing pi from the Pi page provides one)') + '.';
+    } else if (isApp) {
+        note.innerHTML = 'dsh serves its UI on the server\'s loopback only; the monitor forwards port <code>' + port + '</code> to it. Open it below or <a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">in a new tab</a>. Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.settings_yaml || '~/.dsh/settings.yaml') + '</code> lists every preset as a model; pick one in dsh\'s model picker (Settings &rarr; Models shows it as a custom provider). If the frame stays blank, allow port ' + port + ' through the firewall (<code>sudo ufw allow from 192.168.0.0/24 to any port ' + port + '</code>).';
+    } else if (st.exit_code != null && !st.running) {
+        note.textContent = (st.label || 'dsh') + ' exited with code ' + st.exit_code + '. See the log below; start it again when ready.';
+    } else {
+        note.innerHTML = 'Start runs <code>dsh web</code> in the workspace directory, refreshes its <code>settings.yaml</code> provider with your presets, and forwards port <code>' + (st.planned_proxy_port || '') + '</code> so this browser can reach it.';
+    }
+    // The embedded UI
+    const frameWrap = document.getElementById('dsh-frame-wrap');
+    const frame = document.getElementById('dsh-frame');
+    frameWrap.hidden = !isApp;
+    if (isApp && url && frame.src !== url) { frame.src = url; dshFrameLoaded = false; }
+    if (!isApp && frame.src) { frame.removeAttribute('src'); }
+    document.getElementById('dsh-log-details').open = !isApp;
+}
+
+function browseDshCwd() {
+    openFileBrowser('dsh-cwd', 'dir');
+}
+
+async function startDsh() {
     await ensureXterm().catch(err => { showToast(err.message, 'error'); });
-    createPiTerminal();
-    if (!piTerm) return;
-    if (piSocket && (piSocket.readyState === WebSocket.OPEN || piSocket.readyState === WebSocket.CONNECTING)) return;
-    piTerm.reset();
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/pi');
-    ws.binaryType = 'arraybuffer';
-    piSocket = ws;
-    ws.onopen = () => { piLastSize = ''; piResize(); setTimeout(piResize, 150); piTerm.focus(); };
-    ws.onmessage = e => {
-        if (typeof e.data === 'string') {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.error) piTerm.write('\r\n\x1b[2m[' + msg.error + ']\x1b[0m\r\n');
-            } catch (_) {}
-            return;
-        }
-        piTerm.write(new Uint8Array(e.data));
-    };
-    ws.onclose = () => {
-        if (piSocket === ws) piSocket = null;
-        refreshPiStatus();
-    };
+    createTerm(dshSession);
+    const size = termSize(dshSession);
+    const cwd = document.getElementById('dsh-cwd').value.trim();
+    try {
+        const res = await fetch('/api/dsh/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cwd, cols: size.cols, rows: size.rows }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+    } catch (err) {
+        showToast('Could not start dsh: ' + err.message, 'error');
+        return;
+    }
+    await refreshDshStatus();
+    attachTerm(dshSession, refreshDshStatus);
+    // dsh takes a few seconds to come up; reload the frame until it answers.
+    let tries = 0;
+    const poll = setInterval(() => {
+        tries++;
+        const frame = document.getElementById('dsh-frame');
+        if (!dshStatus || !dshStatus.running || tries > 30) { clearInterval(poll); return; }
+        if (frame.src) { frame.src = frame.src; }
+    }, 3000);
+    document.getElementById('dsh-frame').onload = () => { dshFrameLoaded = true; clearInterval(poll); };
 }
 
-function detachPiTerminal() {
-    if (piSocket) { try { piSocket.close(); } catch (_) {} piSocket = null; }
+async function installDsh() {
+    const proceed = await showConfirm('Install dsh',
+        'Run npm install -g @deepseek-ai/dsh on this server in the terminal below?', 'Install');
+    if (!proceed) return;
+    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
+    createTerm(dshSession);
+    const size = termSize(dshSession);
+    try {
+        const res = await fetch('/api/dsh/install', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cols: size.cols, rows: size.rows }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+    } catch (err) {
+        showToast('Could not run the installer: ' + err.message, 'error');
+        return;
+    }
+    await refreshDshStatus();
+    attachTerm(dshSession, refreshDshStatus);
+}
+
+async function stopDsh() {
+    try { await fetch('/api/dsh/stop', { method: 'POST' }); } catch (_) {}
+    detachTerm(dshSession);
+    await refreshDshStatus();
 }

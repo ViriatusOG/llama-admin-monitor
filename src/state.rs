@@ -30,6 +30,9 @@ pub struct UiSettings {
     /// Working directory pi starts in; empty means the home directory.
     #[serde(default)]
     pub pi_workdir: String,
+    /// Workspace directory dsh starts in; empty means the home directory.
+    #[serde(default)]
+    pub dsh_workdir: String,
 }
 
 fn default_port() -> u16 {
@@ -45,6 +48,7 @@ impl Default for UiSettings {
             llama_server_cwd: String::new(),
             models_dir: String::new(),
             pi_workdir: String::new(),
+            dsh_workdir: String::new(),
         }
     }
 }
@@ -77,6 +81,9 @@ pub struct AppState {
     pub gpu_processes: Arc<Mutex<Vec<crate::gpu::procs::GpuProcess>>>,
     /// The pi coding-agent terminal session, when one is running.
     pub pi: crate::pi::Shared,
+    /// DeepSeek Harness session and its LAN-facing port forwarder.
+    pub dsh: crate::pi::Shared,
+    pub dsh_proxy: crate::dsh::SharedProxy,
     pub llama_metrics: Arc<Mutex<LlamaMetrics>>,
     pub server_logs: Arc<Mutex<VecDeque<String>>>,
     pub server_child: Arc<tokio::sync::Mutex<Option<tokio::process::Child>>>,
@@ -120,6 +127,8 @@ impl AppState {
             gpu_metrics: Arc::new(Mutex::new(BTreeMap::new())),
             gpu_processes: Arc::new(Mutex::new(Vec::new())),
             pi: Arc::new(Mutex::new(None)),
+            dsh: Arc::new(Mutex::new(None)),
+            dsh_proxy: Arc::new(Mutex::new(None)),
             llama_metrics: Arc::new(Mutex::new(LlamaMetrics::default())),
             server_logs: Arc::new(Mutex::new(VecDeque::new())),
             server_child: Arc::new(tokio::sync::Mutex::new(None)),
