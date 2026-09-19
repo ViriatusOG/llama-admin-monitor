@@ -1819,7 +1819,7 @@ function openPresetModal(mode, id) {
         setVal('modal-batch-size', 2048);
         setVal('modal-ubatch-size', 2048);
         setVal('modal-parallel-slots', 1);
-        document.getElementById('modal-devices').dataset.unlisted = '';
+        const dp = document.getElementById('modal-devices'); dp.innerHTML = ''; dp.dataset.unlisted = '';
     }
     onBackendChange();
 
