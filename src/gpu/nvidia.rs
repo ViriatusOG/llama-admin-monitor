@@ -16,8 +16,12 @@ impl GpuBackend for NvidiaBackend {
             .map_err(|e| anyhow::anyhow!("failed to run nvidia-smi: {e}"))?;
 
         if !output.status.success() {
+            // nvidia-smi prints "couldn't communicate with the NVIDIA driver"
+            // and friends on stdout, so fall back to it when stderr is empty.
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("nvidia-smi failed: {stderr}");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let msg = if stderr.trim().is_empty() { stdout } else { stderr };
+            anyhow::bail!("nvidia-smi failed: {}", msg.trim());
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);

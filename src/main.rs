@@ -100,10 +100,26 @@ async fn main() -> Result<()> {
     {
         let gpu = state.gpu_metrics.clone();
         thread::spawn(move || {
+            let mut failing = false;
             loop {
                 match backend.read_metrics() {
-                    Ok(m) => *gpu.lock().unwrap() = m,
-                    Err(e) => applog::error(format!("GPU metrics: {e}")),
+                    Ok(m) => {
+                        if failing {
+                            failing = false;
+                            applog::info("GPU metrics recovered");
+                        }
+                        *gpu.lock().unwrap() = m;
+                    }
+                    Err(e) => {
+                        // Log once per outage, not once per poll.
+                        if !failing {
+                            failing = true;
+                            applog::error(format!(
+                                "GPU metrics: {e} (further failures are not logged until it recovers)"
+                            ));
+                        }
+                        gpu.lock().unwrap().clear();
+                    }
                 }
                 thread::sleep(GPU_POLL_INTERVAL);
             }

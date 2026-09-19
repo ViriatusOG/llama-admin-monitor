@@ -1777,7 +1777,9 @@ async function populateBuildSelect(current) {
     builds.forEach(b => {
         options.push('<option value="build:' + escapeHtml(b.id) + '">' + escapeHtml(buildLabel(b)) + ' (installed)</option>');
     });
-    if (current === 'cuda' || !current || current === 'vulkan') {
+    // Legacy sibling build-cuda tree: only offered to presets already using it.
+    // New CUDA setups come from the Install page instead.
+    if (current === 'cuda') {
         options.push('<option value="cuda">Separate CUDA build (build-cuda/bin)</option>');
     }
     if (current && current.startsWith('build:') && !builds.some(b => 'build:' + b.id === current)) {

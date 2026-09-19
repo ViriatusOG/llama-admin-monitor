@@ -5,7 +5,7 @@ pub mod rocm;
 
 use anyhow::Result;
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GpuMetrics {
@@ -45,18 +45,43 @@ pub trait GpuBackend: Send + Sync + 'static {
 
 /// Polls several backends and merges their metrics into one map, so machines
 /// with a mix of vendors (e.g. AMD + NVIDIA cards) report every GPU. A failure
-/// in one backend is logged and skipped without hiding the others.
+/// in one backend is skipped without hiding the others, and logged only when
+/// that backend changes state (working -> failing, failing -> working) so a
+/// tool that is installed but has no card to talk to cannot flood the log.
 pub struct MultiBackend {
     backends: Vec<Arc<dyn GpuBackend>>,
+    failing: Mutex<Vec<bool>>,
+}
+
+impl MultiBackend {
+    pub fn new(backends: Vec<Arc<dyn GpuBackend>>) -> Self {
+        let failing = Mutex::new(vec![false; backends.len()]);
+        Self { backends, failing }
+    }
 }
 
 impl GpuBackend for MultiBackend {
     fn read_metrics(&self) -> Result<BTreeMap<String, GpuMetrics>> {
         let mut all = BTreeMap::new();
-        for backend in &self.backends {
+        let mut failing = self.failing.lock().unwrap();
+        for (i, backend) in self.backends.iter().enumerate() {
             match backend.read_metrics() {
-                Ok(metrics) => all.extend(metrics),
-                Err(e) => crate::applog::error(format!("GPU metrics ({}): {e}", backend.name())),
+                Ok(metrics) => {
+                    if failing[i] {
+                        failing[i] = false;
+                        crate::applog::info(format!("GPU metrics ({}) recovered", backend.name()));
+                    }
+                    all.extend(metrics);
+                }
+                Err(e) => {
+                    if !failing[i] {
+                        failing[i] = true;
+                        crate::applog::error(format!(
+                            "GPU metrics ({}): {e} (further failures are not logged until it recovers)",
+                            backend.name()
+                        ));
+                    }
+                }
             }
         }
         Ok(all)
@@ -72,22 +97,45 @@ pub fn detect_backend(force: &str) -> Arc<dyn GpuBackend> {
         "rocm" => Arc::new(rocm::RocmBackend),
         "nvidia" => Arc::new(nvidia::NvidiaBackend),
         "none" => Arc::new(dummy::DummyBackend),
-        // "auto" / "all" / anything else: monitor every vendor whose tool is present
+        // "auto" / "all" / anything else: monitor every vendor whose tool is
+        // present AND actually reports a card. A leftover driver package
+        // (nvidia-smi after the NVIDIA card was pulled, say) would otherwise
+        // fail on every poll.
         _ => {
-            let mut backends: Vec<Arc<dyn GpuBackend>> = Vec::new();
+            let mut candidates: Vec<(&str, Arc<dyn GpuBackend>)> = Vec::new();
             if command_exists("rocm-smi") {
-                backends.push(Arc::new(rocm::RocmBackend));
+                candidates.push(("rocm-smi", Arc::new(rocm::RocmBackend)));
             }
             if command_exists("nvidia-smi") {
-                backends.push(Arc::new(nvidia::NvidiaBackend));
+                candidates.push(("nvidia-smi", Arc::new(nvidia::NvidiaBackend)));
+            }
+            let mut backends: Vec<Arc<dyn GpuBackend>> = Vec::new();
+            for (tool, backend) in candidates {
+                match backend.read_metrics() {
+                    Ok(m) if !m.is_empty() => {
+                        crate::applog::info(format!(
+                            "GPU monitoring via {tool}: {} card(s)",
+                            m.len()
+                        ));
+                        backends.push(backend);
+                    }
+                    Ok(_) => crate::applog::warn(format!(
+                        "{tool} is installed but reports no GPUs; not monitoring {}",
+                        backend.name()
+                    )),
+                    Err(e) => crate::applog::warn(format!(
+                        "{tool} is installed but not working ({e}); not monitoring {}",
+                        backend.name()
+                    )),
+                }
             }
             match backends.len() {
                 0 => {
-                    crate::applog::warn("No GPU monitoring tool found (rocm-smi / nvidia-smi)");
+                    crate::applog::warn("No working GPU monitoring tool found (rocm-smi / nvidia-smi)");
                     Arc::new(dummy::DummyBackend)
                 }
                 1 => backends.into_iter().next().unwrap(),
-                _ => Arc::new(MultiBackend { backends }),
+                _ => Arc::new(MultiBackend::new(backends)),
             }
         }
     }
@@ -145,20 +193,18 @@ mod tests {
 
     #[test]
     fn multi_backend_merges_all_vendors() {
-        let multi = MultiBackend {
-            backends: vec![
-                Arc::new(StubBackend {
-                    name: "rocm",
-                    cards: vec!["card0", "card1"],
-                    fail: false,
-                }),
-                Arc::new(StubBackend {
-                    name: "nvidia",
-                    cards: vec!["GPU0 NVIDIA"],
-                    fail: false,
-                }),
-            ],
-        };
+        let multi = MultiBackend::new(vec![
+            Arc::new(StubBackend {
+                name: "rocm",
+                cards: vec!["card0", "card1"],
+                fail: false,
+            }),
+            Arc::new(StubBackend {
+                name: "nvidia",
+                cards: vec!["GPU0 NVIDIA"],
+                fail: false,
+            }),
+        ]);
         let metrics = multi.read_metrics().unwrap();
         assert_eq!(metrics.len(), 3);
         assert!(metrics.contains_key("card0"));
@@ -168,20 +214,18 @@ mod tests {
 
     #[test]
     fn multi_backend_skips_failing_backend() {
-        let multi = MultiBackend {
-            backends: vec![
-                Arc::new(StubBackend {
-                    name: "rocm",
-                    cards: vec!["card0"],
-                    fail: true,
-                }),
-                Arc::new(StubBackend {
-                    name: "nvidia",
-                    cards: vec!["GPU0 NVIDIA"],
-                    fail: false,
-                }),
-            ],
-        };
+        let multi = MultiBackend::new(vec![
+            Arc::new(StubBackend {
+                name: "rocm",
+                cards: vec!["card0"],
+                fail: true,
+            }),
+            Arc::new(StubBackend {
+                name: "nvidia",
+                cards: vec!["GPU0 NVIDIA"],
+                fail: false,
+            }),
+        ]);
         let metrics = multi.read_metrics().unwrap();
         assert_eq!(metrics.len(), 1);
         assert!(metrics.contains_key("GPU0 NVIDIA"));

@@ -12,6 +12,8 @@ Backwards compatibility is preserved unless explicitly noted.
 - Presets choose a build under GPU distribution → Build (installed builds, the configured binary, or the legacy `build-cuda` tree); the Devices picker and the Benchmark page follow that choice.
 
 ### Fixed
+- GPU monitoring no longer floods the log when a vendor tool is installed but has no card behind it (e.g. `nvidia-smi` left over after swapping the NVIDIA card for an AMD one). In auto mode each tool is probed once at startup and skipped, with a single warning, if it fails or reports no GPUs; a tool that fails later is logged once per outage and once on recovery, not on every poll. `nvidia-smi`'s actual error text (it prints it on stdout) is now included.
+- The preset editor only offers the legacy "Separate CUDA build (build-cuda/bin)" option to presets already using it; new CUDA setups come from the Install page.
 - The preset's Build choice was never sent with the launch request, so it had no effect; it is now.
 
 ### Added (continued)
