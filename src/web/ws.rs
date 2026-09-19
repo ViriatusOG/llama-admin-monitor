@@ -95,7 +95,7 @@ pub fn pi_ws_route(
                 let session = slot.lock().unwrap().clone();
                 let Some(session) = session else {
                     let _ = ws_tx
-                        .send(Message::text(&format!(
+                        .send(Message::text(format!(
                             r#"{{"error":"no {which} session"}}"#
                         )))
                         .await;
