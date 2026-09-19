@@ -452,10 +452,6 @@ fn strip_log_prefix(line: &str) -> String {
 /// anything else is the configured binary. A single build compiled with
 /// both GGML_CUDA and GGML_VULKAN needs no switching: its device list
 /// carries CUDA0 next to the Vulkan devices.
-pub fn binary_for_backend(app_config: &AppConfig, backend: &str) -> Result<PathBuf> {
-    Ok(launch_target(app_config, backend)?.binary)
-}
-
 /// Where a launch runs: the binary and its working directory. A preset's
 /// `backend` is one of: "" / "vulkan" (the configured binary and cwd),
 /// "cuda" (legacy sibling build-cuda tree), or "build:<id>" for a build

@@ -458,7 +458,7 @@ pub fn installed_builds() -> Vec<InstalledBuild> {
             out.push(b);
         }
     }
-    out.sort_by(|a, b| b.installed_at.cmp(&a.installed_at));
+    out.sort_by_key(|b| std::cmp::Reverse(b.installed_at));
     out
 }
 
