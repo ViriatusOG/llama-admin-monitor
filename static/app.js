@@ -1461,7 +1461,7 @@ function renderModelsTab() {
                 : '\u2014';
             const fit = vramFitCheck(m.size_bytes);
             return '<div class="model-grid-row">' +
-                '<span class="model-name" title="' + escapeHtml(m.filename) + '">\u{1F4C4} ' + escapeHtml(m.model_name || m.filename) + (m.is_mmproj ? ' <span class="chip-projector" title="Multimodal projector: pair it with a model via --mmproj">projector</span>' : '') + '</span>' +
+                '<span class="model-name" title="' + escapeHtml(m.filename) + '"><span class="model-name-main">\u{1F4C4} ' + escapeHtml(m.model_name || m.filename) + '</span>' + modelPairChip(m) + '</span>' +
                 '<span class="model-cell">' + escapeHtml(m.quant_type || '\u2014') + '</span>' +
                 '<span class="model-cell">' + escapeHtml(m.size_display) + '</span>' +
                 '<span class="model-cell ' + fit.cls + '" title="' + escapeHtml(fit.title) + '">' + fit.label + '</span>' +
@@ -1471,6 +1471,21 @@ function renderModelsTab() {
                 '<span class="model-delete-cell"><button class="btn btn-xs btn-danger" onclick="deleteModel(\'' + jsStr(m.filename) + '\')">Delete</button></span>' +
                 '</div>';
         }).join('');
+}
+
+// What a row pairs with: a model shows its projector, a projector the
+// model(s) it belongs to.
+function modelPairChip(m) {
+    if (m.is_mmproj) {
+        const names = (m.pairs_with || []).map(f => (allModelsCache.find(x => x.filename === f) || {}).model_name || f);
+        return names.length
+            ? '<span class="model-pair" title="Projector for: ' + escapeHtml(m.pairs_with.join(', ')) + '"><span class="chip-projector">projector</span> for ' + escapeHtml(names.join(', ')) + '</span>'
+            : '<span class="model-pair" title="No model in this directory matches this projector by repo or name"><span class="chip-projector is-unpaired">projector</span> not matched to any model here</span>';
+    }
+    if (m.projector) {
+        return '<span class="model-pair" title="Vision model: launches with --mmproj ' + escapeHtml(m.projector) + '"><span class="chip-projector">vision</span> mmproj: ' + escapeHtml(m.projector) + '</span>';
+    }
+    return '';
 }
 
 async function loadModelsTab() {
@@ -1945,6 +1960,21 @@ async function resetPresets() {
 }
 
 // Clear field errors on input
+// Choosing a model that has a paired projector fills --mmproj in, unless
+// the field already holds something.
+document.getElementById('modal-model-path').addEventListener('input', () => {
+    const path = document.getElementById('modal-model-path').value.trim();
+    const field = document.getElementById('modal-mmproj');
+    const m = allModelsCache.find(x => x.path === path);
+    if (m && m.projector && !field.value.trim()) {
+        const proj = allModelsCache.find(x => x.filename === m.projector);
+        if (proj) {
+            field.value = proj.path;
+            showToast('Projector set to ' + m.projector, 'success');
+        }
+    }
+});
+
 ['modal-name', 'modal-model-path'].forEach(id => {
     document.getElementById(id).addEventListener('input', function() {
         this.classList.remove('field-error');

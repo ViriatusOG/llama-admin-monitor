@@ -14,6 +14,11 @@ pub struct DiscoveredModel {
     pub is_split: bool,
     /// A multimodal projector (mmproj) rather than a language model.
     pub is_mmproj: bool,
+    /// For a model: the projector file in the same directory that belongs to
+    /// it, if one was found. For a projector: the models it belongs to.
+    /// See `pair_projectors`.
+    pub projector: Option<String>,
+    pub pairs_with: Vec<String>,
     pub hf_repo: Option<String>,
     pub downloaded_at: Option<u64>,
     pub hf_downloads: Option<u64>,
@@ -62,6 +67,8 @@ pub fn scan_models_dir(dir: &Path) -> Result<Vec<DiscoveredModel>> {
             model_name,
             is_split,
             is_mmproj,
+            projector: None,
+            pairs_with: Vec::new(),
             hf_repo: meta.as_ref().map(|m| m.repo.clone()),
             downloaded_at: meta.as_ref().map(|m| m.downloaded_at),
             hf_downloads: meta.as_ref().and_then(|m| m.hf_downloads),
@@ -70,7 +77,68 @@ pub fn scan_models_dir(dir: &Path) -> Result<Vec<DiscoveredModel>> {
     }
 
     models.sort_by(|a, b| a.filename.cmp(&b.filename));
+    pair_projectors(&mut models);
     Ok(models)
+}
+
+/// Lower-cased model name with separators removed, so
+/// "gemma-3-12b-it" and "Gemma_3_12B_IT" compare equal.
+fn name_key(name: &str) -> String {
+    name.to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+/// Links projector files to the models they belong to. Two signals, in
+/// order: both files were downloaded from the same Hugging Face repo (the
+/// `.meta.json` sidecars record it), or the projector's filename contains
+/// the model's name (`mmproj-gemma-3-12b-it-f16.gguf` for
+/// `gemma-3-12b-it-Q6_K.gguf`). A model keeps the first projector that
+/// matches by repo, else by name; a projector lists every model it fits.
+pub fn pair_projectors(models: &mut [DiscoveredModel]) {
+    let projectors: Vec<(usize, String, Option<String>)> = models
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.is_mmproj)
+        .map(|(i, m)| (i, name_key(&m.filename), m.hf_repo.clone()))
+        .collect();
+    if projectors.is_empty() {
+        return;
+    }
+
+    let mut links: Vec<(usize, usize)> = Vec::new(); // (model index, projector index)
+    for (mi, model) in models.iter().enumerate() {
+        if model.is_mmproj {
+            continue;
+        }
+        let by_repo = model.hf_repo.as_ref().and_then(|repo| {
+            projectors
+                .iter()
+                .find(|(_, _, prepo)| prepo.as_ref() == Some(repo))
+                .map(|(pi, _, _)| *pi)
+        });
+        let by_name = model.model_name.as_ref().and_then(|name| {
+            let key = name_key(name);
+            if key.len() < 4 {
+                return None;
+            }
+            projectors
+                .iter()
+                .find(|(_, pkey, _)| pkey.contains(&key))
+                .map(|(pi, _, _)| *pi)
+        });
+        if let Some(pi) = by_repo.or(by_name) {
+            links.push((mi, pi));
+        }
+    }
+
+    for (mi, pi) in links {
+        let projector_name = models[pi].filename.clone();
+        let model_name = models[mi].filename.clone();
+        models[mi].projector = Some(projector_name);
+        models[pi].pairs_with.push(model_name);
+    }
 }
 
 /// Vision projectors are conventionally named `mmproj-*.gguf` or
@@ -183,6 +251,46 @@ fn format_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn discovered(filename: &str, repo: Option<&str>) -> DiscoveredModel {
+        let (model_name, quant_type) = parse_gguf_filename(filename);
+        DiscoveredModel {
+            path: PathBuf::from(filename),
+            filename: filename.to_string(),
+            size_bytes: 0,
+            size_display: String::new(),
+            quant_type,
+            model_name,
+            is_split: false,
+            is_mmproj: is_mmproj_filename(filename),
+            projector: None,
+            pairs_with: Vec::new(),
+            hf_repo: repo.map(str::to_string),
+            downloaded_at: None,
+            hf_downloads: None,
+            hf_last_modified: None,
+        }
+    }
+
+    #[test]
+    fn projectors_pair_by_repo_then_by_name() {
+        let mut models = vec![
+            discovered("gemma-3-12b-it-Q6_K.gguf", Some("unsloth/gemma-3-12b-it-GGUF")),
+            discovered("mmproj-F16.gguf", Some("unsloth/gemma-3-12b-it-GGUF")),
+            discovered("Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf", None),
+            discovered("mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf", None),
+            discovered("Llama-3.3-70B-Instruct-IQ3_M.gguf", None),
+        ];
+        pair_projectors(&mut models);
+        assert_eq!(models[0].projector.as_deref(), Some("mmproj-F16.gguf"));
+        assert_eq!(models[1].pairs_with, vec!["gemma-3-12b-it-Q6_K.gguf"]);
+        assert_eq!(
+            models[2].projector.as_deref(),
+            Some("mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf")
+        );
+        assert_eq!(models[3].pairs_with, vec!["Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"]);
+        assert_eq!(models[4].projector, None);
+    }
 
     #[test]
     fn test_is_mmproj_filename() {

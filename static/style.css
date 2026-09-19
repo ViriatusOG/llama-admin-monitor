@@ -481,7 +481,10 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 .model-grid-row { border-bottom: 1px solid var(--border); font-size: 12.5px; transition: background var(--ease-fast); }
 .model-grid-row:last-child { border-bottom: none; }
 .model-grid-row:hover { background: var(--bg-hover); }
-.model-grid-row .model-name { color: var(--fg-bright); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.model-grid-row .model-name { color: var(--fg-bright); font-weight: 500; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.model-name-main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-pair .chip-projector { flex-shrink: 0; }
+.model-pair { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--fg-muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .model-grid-row .model-cell { color: var(--fg-muted); font-size: 11.5px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-grid-row .model-delete-cell { justify-self: end; }
 .sortable { cursor: pointer; user-select: none; transition: color var(--ease-fast); }
@@ -557,7 +560,8 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 .hf-companion-bar select { min-width: 0; width: 100%; font-family: var(--mono); font-size: 12px; }
 .hf-companion-bar .help-text { grid-column: 1 / -1; font-size: 11.5px; }
 .hf-companion-bar.hidden { display: none; }
-.chip-projector { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--magenta); background: var(--magenta-subtle); border: 1px solid var(--magenta-border); border-radius: var(--radius-xs); padding: 0 5px; flex-shrink: 0; }
+.chip-projector { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--magenta); background: var(--magenta-subtle); border: 1px solid var(--magenta-border); border-radius: var(--radius-xs); padding: 0 5px; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-projector.is-unpaired { color: var(--fg-faint); background: var(--inset-sm); border-color: var(--border); }
 
 /* File browser / HF lists */
 .file-browser-bar { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border); flex-shrink: 0; }

@@ -8,6 +8,7 @@ Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
 ### Added
+- Models page pairs projector files with their models (same Hugging Face repo, or the model's name in the projector's filename): a vision model lists its `mmproj`, a projector lists the models it belongs to, and unmatched projectors say so. Picking such a model in the preset editor fills the projector field automatically.
 - CPU card shows the package/die temperature from hwmon (`k10temp`/`zenpower` on AMD, `coretemp` on Intel, `cpu_thermal` on ARM boards; thermal zones as a fallback).
 - Logs page (sidebar, under Monitor) showing the monitor's own event log: launches and why they failed, crashes it detected, update progress, GPU/telemetry problems and download results, with timestamps, a "Problems only" filter, Download, and an unread-problems count in the sidebar. llama-server's output stays in Process Output on Monitor. The crash notification's "View logs" button opens it.
 - Update notifications: release builds check GitHub on load and every six hours, show an "Update" pill beside the version in the sidebar and a one-time toast per new release with an "Open updates" button that jumps to Settings > App Updates.
