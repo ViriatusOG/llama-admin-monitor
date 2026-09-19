@@ -2,6 +2,8 @@ use anyhow::Result;
 use std::path::Path;
 use std::process::Command;
 
+use super::amd_names::{parse_hex_id, resolve_amd_name};
+
 // ── GPU Architecture Database ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -173,38 +175,55 @@ pub fn detect_rocm_gpus() -> Option<DetectedGpu> {
 
 pub fn parse_rocminfo(output: &str) -> Option<DetectedGpu> {
     // GPU agents have Name: gfxNNN, CPU agents have Name: AMD EPYC / Intel etc.
-    // Each GPU agent is usually followed by a "Marketing Name:" line with the
-    // human-readable product name (e.g. "AMD Radeon RX 9070 XT"). Prefer that
-    // for display, falling back to the raw gfx id when it's absent (older
-    // rocminfo output, or test fixtures without a Marketing Name line).
+    // Each GPU agent is followed by a "Marketing Name:" line with the
+    // human-readable product name and, further down, "Chip ID: 30032(0x7550)".
+    // Prefer the marketing name for display; when the ROCm tools do not know
+    // the card it is a generic "AMD Radeon Graphics", which the chip id can
+    // usually resolve (see amd_names). Fall back to the raw gfx id when the
+    // marketing line is absent (older rocminfo, test fixtures).
+    struct Agent {
+        gfx: String,
+        marketing: String,
+        chip: Option<u32>,
+    }
+    fn finish(agent: Agent) -> String {
+        if agent.marketing.is_empty() && agent.chip.is_none() {
+            return agent.gfx;
+        }
+        resolve_amd_name(&agent.marketing, &agent.gfx, agent.chip, None, None)
+    }
+
     let mut arch = String::new();
     let mut names = Vec::new();
-    let mut pending_name: Option<String> = None;
+    let mut current: Option<Agent> = None;
 
     for line in output.lines() {
         let trimmed = line.trim();
         if let Some(name_val) = trimmed.strip_prefix("Name:") {
-            if let Some(n) = pending_name.take() {
-                names.push(n);
+            if let Some(agent) = current.take() {
+                names.push(finish(agent));
             }
             let name = name_val.trim().to_string();
             if name.starts_with("gfx") {
                 if arch.is_empty() {
                     arch = name.clone();
                 }
-                pending_name = Some(name);
+                current = Some(Agent {
+                    gfx: name,
+                    marketing: String::new(),
+                    chip: None,
+                });
             }
-        } else if pending_name.is_some()
-            && let Some(marketing) = trimmed.strip_prefix("Marketing Name:")
-        {
-            let marketing = marketing.trim();
-            if !marketing.is_empty() {
-                pending_name = Some(marketing.to_string());
+        } else if let Some(agent) = current.as_mut() {
+            if let Some(marketing) = trimmed.strip_prefix("Marketing Name:") {
+                agent.marketing = marketing.trim().to_string();
+            } else if let Some(chip) = trimmed.strip_prefix("Chip ID:") {
+                agent.chip = parse_hex_id(chip);
             }
         }
     }
-    if let Some(n) = pending_name.take() {
-        names.push(n);
+    if let Some(agent) = current.take() {
+        names.push(finish(agent));
     }
 
     if names.is_empty() {
@@ -439,6 +458,31 @@ Agent 4
         let detected = parse_rocminfo(output).unwrap();
         assert_eq!(detected.arch, "gfx906");
         assert_eq!(detected.count, 4);
+    }
+
+    #[test]
+    fn rocminfo_generic_marketing_name_resolves_from_chip_id() {
+        let output = r#"
+Agent 2
+*******
+  Name:                    gfx1201
+  Uuid:                    GPU-1
+  Marketing Name:          AMD Radeon Graphics
+  Vendor Name:             AMD
+  Chip ID:                 30033(0x7551)
+Agent 3
+*******
+  Name:                    gfx1201
+  Uuid:                    GPU-2
+  Marketing Name:          AMD Radeon RX 9070 XT
+  Vendor Name:             AMD
+  Chip ID:                 30032(0x7550)
+"#;
+        let detected = parse_rocminfo(output).unwrap();
+        assert_eq!(
+            detected.names,
+            vec!["AMD Radeon AI PRO R9700", "AMD Radeon RX 9070 XT"]
+        );
     }
 
     #[test]

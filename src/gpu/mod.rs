@@ -1,3 +1,4 @@
+pub mod amd_names;
 pub mod dummy;
 pub mod env;
 pub mod nvidia;

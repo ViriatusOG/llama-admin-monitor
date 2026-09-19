@@ -277,22 +277,76 @@ fn to_info(r: &GhRelease, asset: Option<&str>) -> ReleaseInfo {
     }
 }
 
-/// Latest stable (non-prerelease) and latest beta (prerelease) releases.
-/// GitHub lists releases newest first, so the first match of each kind wins.
+/// Sortable form of a release version: `YYYY.M.D` with an optional
+/// `-beta.N`. A stable release outranks any beta of the same day, and
+/// `beta.12` outranks `beta.9` (a plain string compare gets that wrong,
+/// and so does GitHub's own listing order, which sorts by tag name).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VersionKey {
+    date: (u32, u32, u32),
+    /// 1 for a stable release, 0 for a beta, so stable sorts higher.
+    stable: u8,
+    beta: u32,
+}
+
+pub fn version_key(version: &str) -> Option<VersionKey> {
+    let v = version.trim().trim_start_matches('v');
+    let (date, rest) = match v.split_once('-') {
+        Some((d, r)) => (d, Some(r)),
+        None => (v, None),
+    };
+    let mut parts = date.split('.').map(|n| n.parse::<u32>().ok());
+    let y = parts.next().flatten()?;
+    let m = parts.next().flatten()?;
+    let d = parts.next().flatten()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let (stable, beta) = match rest {
+        None => (1, 0),
+        Some(r) => (0, r.strip_prefix("beta.")?.parse::<u32>().ok()?),
+    };
+    Some(VersionKey {
+        date: (y, m, d),
+        stable,
+        beta,
+    })
+}
+
+/// Latest stable (non-prerelease) and latest beta (prerelease) releases,
+/// by version number; releases whose tag does not parse fall back to their
+/// publish date, so a hand-made tag still sorts somewhere sensible.
 fn latest_per_track(
     releases: &[GhRelease],
     asset: Option<&str>,
 ) -> (Option<ReleaseInfo>, Option<ReleaseInfo>) {
+    let rank = |r: &GhRelease| {
+        (
+            version_key(&r.tag_name),
+            r.published_at.clone().unwrap_or_default(),
+        )
+    };
     let published = releases.iter().filter(|r| !r.draft);
     let stable = published
         .clone()
-        .find(|r| !r.prerelease)
+        .filter(|r| !r.prerelease)
+        .max_by_key(|r| rank(r))
         .map(|r| to_info(r, asset));
     let beta = published
         .clone()
-        .find(|r| r.prerelease)
+        .filter(|r| r.prerelease)
+        .max_by_key(|r| rank(r))
         .map(|r| to_info(r, asset));
     (stable, beta)
+}
+
+/// True when `latest` is a newer version than `current`. Unparseable
+/// versions compare by string inequality, as before.
+fn is_newer(latest: &str, current: &str) -> bool {
+    match (version_key(latest), version_key(current)) {
+        (Some(l), Some(c)) => l > c,
+        _ => latest != current,
+    }
 }
 
 /// Lists releases, reusing a recent answer (see CHECK_CACHE_TTL). `force`
@@ -321,7 +375,7 @@ async fn check_updates_uncached() -> Result<UpdateStatus> {
         _ => None,
     };
     let update_available = latest_on_track
-        .map(|r| r.version != current_version)
+        .map(|r| is_newer(&r.version, &current_version))
         .unwrap_or(false);
     Ok(UpdateStatus {
         current_track: current_track(),
@@ -511,6 +565,35 @@ mod tests {
             stable.unwrap().asset_url.as_deref(),
             Some("https://example/v2026.9.20/linux")
         );
+    }
+
+    #[test]
+    fn latest_is_by_version_not_listing_order() {
+        // GitHub's API lists by tag name, which puts beta.9 above beta.12.
+        let releases = vec![
+            release("v2026.9.21-beta.9", true, false),
+            release("v2026.9.21-beta.12", true, false),
+            release("v2026.9.21-beta.10", true, false),
+            release("v2026.9.20", false, false),
+            release("v2026.9.9", false, false),
+        ];
+        let (stable, beta) = latest_per_track(&releases, None);
+        assert_eq!(beta.unwrap().tag, "v2026.9.21-beta.12");
+        assert_eq!(stable.unwrap().tag, "v2026.9.20");
+    }
+
+    #[test]
+    fn version_keys_order_sensibly() {
+        let k = |v: &str| version_key(v).unwrap();
+        assert!(k("2026.9.21-beta.12") > k("2026.9.21-beta.9"));
+        assert!(k("2026.9.21") > k("2026.9.21-beta.12"));
+        assert!(k("2026.10.1") > k("2026.9.30"));
+        assert!(k("v2026.9.21") == k("2026.9.21"));
+        assert_eq!(version_key("nightly"), None);
+        assert_eq!(version_key("2026.9.21-rc.1"), None);
+        assert!(is_newer("2026.9.21-beta.12", "2026.9.21-beta.9"));
+        assert!(!is_newer("2026.9.21-beta.9", "2026.9.21-beta.12"));
+        assert!(!is_newer("2026.9.21-beta.12", "2026.9.21-beta.12"));
     }
 
     #[test]
