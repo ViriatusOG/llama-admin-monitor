@@ -71,7 +71,10 @@ pub fn user_bin_dirs() -> Vec<PathBuf> {
     ] {
         out.push(home.join(rel));
     }
-    for versions in [home.join(".nvm/versions/node"), home.join(".fnm/node-versions")] {
+    for versions in [
+        home.join(".nvm/versions/node"),
+        home.join(".fnm/node-versions"),
+    ] {
         if let Ok(entries) = std::fs::read_dir(&versions) {
             let mut dirs: Vec<PathBuf> = entries
                 .flatten()
