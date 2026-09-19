@@ -86,12 +86,7 @@ pub async fn start_server(
     // Validate the server binary: a path must exist, a bare name must be on PATH.
     let server_path = &app_config.llama_server_path;
     if server_path.components().count() > 1 {
-        if !server_path.exists() {
-            anyhow::bail!(
-                "llama-server binary not found: {}. Set it in Settings.",
-                server_path.display()
-            );
-        }
+        check_executable(server_path)?;
     } else if find_on_path(server_path).is_none() {
         anyhow::bail!(
             "`{}` is not on PATH. Set the full path to llama-server in Settings \
@@ -125,6 +120,13 @@ pub async fn start_server(
     } else {
         app_config.llama_server_path.clone()
     };
+
+    if !app_config.llama_server_cwd.is_dir() {
+        anyhow::bail!(
+            "working directory {} does not exist or is not a directory. Fix it in Settings.",
+            app_config.llama_server_cwd.display()
+        );
+    }
 
     let mut cmd = TokioCommand::new(&binary_path);
     cmd.current_dir(&app_config.llama_server_cwd);
@@ -260,7 +262,13 @@ pub async fn start_server(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let mut child = cmd.spawn()?;
+    let mut child = cmd.spawn().map_err(|e| {
+        anyhow::anyhow!(
+            "cannot launch {} (in {}): {e}",
+            binary_path.display(),
+            app_config.llama_server_cwd.display()
+        )
+    })?;
 
     // Capture stdout
     if let Some(stdout) = child.stdout.take() {
@@ -350,6 +358,38 @@ pub async fn start_server(
     // Notify the llama poller to start
     state.llama_poll_notify.notify_one();
 
+    Ok(())
+}
+
+/// Explains the usual reasons a configured binary cannot run, before the
+/// OS reduces them all to "Permission denied".
+fn check_executable(path: &std::path::Path) -> Result<()> {
+    if !path.exists() {
+        anyhow::bail!(
+            "llama-server binary not found: {}. Set it in Settings.",
+            path.display()
+        );
+    }
+    if path.is_dir() {
+        anyhow::bail!(
+            "{} is a directory. Point the llama-server setting at the executable \
+             inside it (usually {}/llama-server).",
+            path.display(),
+            path.display()
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path)?.permissions().mode();
+        if mode & 0o111 == 0 {
+            anyhow::bail!(
+                "{} is not executable. Run: chmod +x {}",
+                path.display(),
+                path.display()
+            );
+        }
+    }
     Ok(())
 }
 
