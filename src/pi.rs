@@ -474,6 +474,13 @@ impl Session {
         (sb, rx)
     }
 
+    /// The scrollback as text with ANSI escape sequences removed, for
+    /// scraping things a program prints (dsh's login URL, say).
+    pub fn scrollback_text(&self) -> String {
+        let raw: Vec<u8> = self.scrollback.lock().unwrap().iter().copied().collect();
+        strip_ansi(&String::from_utf8_lossy(&raw))
+    }
+
     pub fn write_input(&self, data: &[u8]) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
         w.write_all(data)?;
@@ -492,9 +499,52 @@ impl Session {
     }
 }
 
+/// Removes CSI/OSC escape sequences and carriage returns from terminal
+/// output so plain-text matching works.
+pub fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            match chars.next() {
+                Some('[') => {
+                    // CSI: parameters then a final byte 0x40..=0x7e
+                    for n in chars.by_ref() {
+                        if ('@'..='~').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    // OSC: until BEL or ESC \
+                    let mut prev = '\0';
+                    for n in chars.by_ref() {
+                        if n == '\u{7}' || (prev == '\u{1b}' && n == '\\') {
+                            break;
+                        }
+                        prev = n;
+                    }
+                }
+                _ => {}
+            }
+        } else if c != '\r' {
+            out.push(c);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ansi_is_stripped() {
+        assert_eq!(
+            strip_ansi("\u{1b}[1mpi\u{1b}[0m v1\r\n\u{1b}]0;title\u{7}x"),
+            "pi v1\nx"
+        );
+    }
 
     fn entry(id: &str, ctx: u64) -> ModelEntry {
         ModelEntry {

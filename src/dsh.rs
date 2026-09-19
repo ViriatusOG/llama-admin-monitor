@@ -44,6 +44,9 @@ pub struct Status {
     pub cwd: Option<String>,
     pub exit_code: Option<i32>,
     pub proxy_port: Option<u16>,
+    /// The path and query of the URL dsh printed at startup (it carries a
+    /// login token), to be opened through the forwarded port.
+    pub login_path: Option<String>,
     pub settings_yaml: String,
     pub provider: &'static str,
 }
@@ -80,8 +83,12 @@ pub fn status(session: &Shared, proxy: &SharedProxy) -> Status {
         }
         None => (false, None, None, None),
     };
+    let login_path = s
+        .as_ref()
+        .and_then(|s| find_login_path(&s.scrollback_text()));
     Status {
         installed: path.is_some(),
+        login_path,
         version: path.as_ref().and_then(pi::program_version),
         path: path.map(|p| p.display().to_string()),
         npm: pi::find_program("npm").map(|p| p.display().to_string()),
@@ -201,6 +208,41 @@ pub fn trusted_hosts(request_host: Option<&str>, proxy_port: u16) -> Vec<String>
     out
 }
 
+/// dsh prints something like `http://127.0.0.1:3080/?token=abc` (the exact
+/// shape is its business); everything after the authority is what the
+/// browser must open. The last such URL wins, as a restart prints a new one.
+pub fn find_login_path(text: &str) -> Option<String> {
+    let mut found = None;
+    for (i, _) in text.match_indices("http://") {
+        let rest = &text[i..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '>' || c == ')')
+            .unwrap_or(rest.len());
+        let url = &rest[..end];
+        let Some(after_scheme) = url.strip_prefix("http://") else {
+            continue;
+        };
+        let (authority, path) = match after_scheme.find('/') {
+            Some(p) => (&after_scheme[..p], &after_scheme[p..]),
+            None => (after_scheme, "/"),
+        };
+        let port_ok = authority
+            .rsplit_once(':')
+            .map(|(_, p)| p == DSH_PORT.to_string())
+            .unwrap_or(false);
+        if !port_ok {
+            continue;
+        }
+        // A bare root is not a login URL; keep looking for one with a token.
+        if path.len() > 1 {
+            found = Some(path.trim_end_matches('.').to_string());
+        } else if found.is_none() {
+            found = Some("/".to_string());
+        }
+    }
+    found
+}
+
 pub fn host_without_port(host: &str) -> &str {
     let h = host.trim();
     if let Some(rest) = h.strip_prefix('[') {
@@ -292,6 +334,17 @@ mod tests {
             4096
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn login_url_is_scraped() {
+        let text = "dsh web: listening\nOpen http://127.0.0.1:3080/?token=abc123 in your browser.\n";
+        assert_eq!(find_login_path(text).as_deref(), Some("/?token=abc123"));
+        let text = "http://127.0.0.1:3080/\nlater: http://127.0.0.1:3080/auth/xyz\n";
+        assert_eq!(find_login_path(text).as_deref(), Some("/auth/xyz"));
+        assert_eq!(find_login_path("http://127.0.0.1:3080\n").as_deref(), Some("/"));
+        assert_eq!(find_login_path("http://127.0.0.1:9999/?token=x"), None);
+        assert_eq!(find_login_path("nothing here"), None);
     }
 
     #[test]

@@ -3454,8 +3454,10 @@ const dshSession = defineTermSession('dsh', 'dsh-terminal', 'dsh-terminal-empty'
 let dshStatus = null;
 let dshFrameLoaded = false;
 
-function dshUrl(port) {
-    return location.protocol + '//' + location.hostname + ':' + port + '/';
+// dsh's UI is reached through the forwarded port, at the login path (with
+// its token) that dsh printed when it started.
+function dshUrl(port, loginPath) {
+    return location.protocol + '//' + location.hostname + ':' + port + (loginPath || '/');
 }
 
 async function openDshPage() {
@@ -3487,7 +3489,8 @@ function renderDshStatus() {
     document.getElementById('dsh-btn-start').textContent = isApp ? 'Restart dsh' : 'Start dsh';
     document.getElementById('nav-count-dsh').textContent = st.running ? '●' : '';
     const port = st.proxy_port || st.planned_proxy_port;
-    const url = port ? dshUrl(port) : '';
+    const url = port ? dshUrl(port, st.login_path) : '';
+    const hasLogin = !!(st.login_path && st.login_path !== '/');
     const open = document.getElementById('dsh-open');
     open.hidden = !isApp;
     open.href = url || '#';
@@ -3513,10 +3516,17 @@ function renderDshStatus() {
     // The embedded UI
     const frameWrap = document.getElementById('dsh-frame-wrap');
     const frame = document.getElementById('dsh-frame');
-    frameWrap.hidden = !isApp;
-    if (isApp && url && frame.src !== url) { frame.src = url; dshFrameLoaded = false; }
-    if (!isApp && frame.src) { frame.removeAttribute('src'); }
-    document.getElementById('dsh-log-details').open = !isApp;
+    // Wait for the login URL before loading the frame: the bare root is
+    // refused ("authentication required").
+    const ready = isApp && hasLogin;
+    frameWrap.hidden = !ready;
+    if (ready && url && frame.src !== url) { frame.src = url; dshFrameLoaded = false; }
+    if (!ready && frame.src) { frame.removeAttribute('src'); }
+    open.hidden = !ready;
+    document.getElementById('dsh-log-details').open = !ready;
+    if (isApp && !hasLogin) {
+        note.innerHTML = 'dsh is starting; waiting for the login URL it prints (it carries a one-time token). The UI opens here as soon as it appears in the log below.';
+    }
 }
 
 function browseDshCwd() {
@@ -3541,15 +3551,15 @@ async function startDsh() {
     }
     await refreshDshStatus();
     attachTerm(dshSession, refreshDshStatus);
-    // dsh takes a few seconds to come up; reload the frame until it answers.
+    // dsh takes a few seconds to come up and prints its login URL when it
+    // does; poll status until that URL is known (or the process ends).
     let tries = 0;
-    const poll = setInterval(() => {
+    const poll = setInterval(async () => {
         tries++;
-        const frame = document.getElementById('dsh-frame');
-        if (!dshStatus || !dshStatus.running || tries > 30) { clearInterval(poll); return; }
-        if (frame.src) { frame.src = frame.src; }
-    }, 3000);
-    document.getElementById('dsh-frame').onload = () => { dshFrameLoaded = true; clearInterval(poll); };
+        await refreshDshStatus();
+        const done = !dshStatus || !dshStatus.running || (dshStatus.login_path && dshStatus.login_path !== '/');
+        if (done || tries > 40) clearInterval(poll);
+    }, 2000);
 }
 
 async function installDsh() {
