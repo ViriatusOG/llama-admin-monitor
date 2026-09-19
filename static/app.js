@@ -3375,12 +3375,15 @@ function renderPiStatus() {
     document.getElementById('pi-btn-stop').hidden = !st.running;
     document.getElementById('pi-btn-start').textContent = st.running && st.label === 'pi' ? 'Restart pi' : 'Start pi';
     document.getElementById('nav-count-pi').textContent = st.running ? '●' : '';
+    const upd = document.getElementById('pi-btn-update');
+    upd.hidden = !(st.installed && st.update_available && !st.running);
+    if (st.latest_version) upd.textContent = 'Update pi to ' + st.latest_version;
     if (st.running) {
         badge.textContent = (st.label || 'pi') + ' running';
         badge.className = 'badge badge-green';
     } else if (st.installed) {
-        badge.textContent = 'pi ' + (st.version || 'installed').replace(/^pi\s+/i, '');
-        badge.className = 'badge badge-neutral';
+        badge.textContent = 'pi ' + (st.version || 'installed').replace(/^pi\s+/i, '') + (st.update_available ? ' · ' + st.latest_version + ' available' : '');
+        badge.className = 'badge ' + (st.update_available ? 'badge-accent' : 'badge-neutral');
     } else {
         badge.textContent = 'pi not installed';
         badge.className = 'badge badge-yellow';
@@ -3440,6 +3443,29 @@ async function installPi() {
     attachTerm(piSession, refreshPiStatus).then(() => piSession.term && piSession.term.focus());
 }
 
+async function updatePi() {
+    const st = piStatus || {};
+    const proceed = await showConfirm('Update pi',
+        'Run npm install -g @earendil-works/pi-coding-agent@latest' + (st.latest_version ? ' (' + st.latest_version + ')' : '') + ' in the terminal below? A running pi is stopped first.', 'Update');
+    if (!proceed) return;
+    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
+    createTerm(piSession);
+    const size = termSize(piSession);
+    try {
+        const res = await fetch('/api/pi/update', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cols: size.cols, rows: size.rows }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+    } catch (err) {
+        showToast('Could not run the update: ' + err.message, 'error');
+        return;
+    }
+    await refreshPiStatus();
+    attachTerm(piSession, refreshPiStatus);
+}
+
 async function stopPi() {
     try { await fetch('/api/pi/stop', { method: 'POST' }); } catch (_) {}
     detachTerm(piSession);
@@ -3448,11 +3474,10 @@ async function stopPi() {
 
 function piResize() { termResize(piSession); }
 
-// --- DeepSeek Harness page: dsh's own web UI in a frame, its log in a terminal ---
+// --- DeepSeek Harness page: dsh runs on the server; its web UI opens in a tab ---
 
 const dshSession = defineTermSession('dsh', 'dsh-terminal', 'dsh-terminal-empty', 'section-dsh');
 let dshStatus = null;
-let dshFrameLoaded = false;
 
 // dsh's UI is reached through the forwarded port, at the login path (with
 // its token) that dsh printed when it started.
@@ -3488,44 +3513,43 @@ function renderDshStatus() {
     document.getElementById('dsh-btn-stop').hidden = !st.running;
     document.getElementById('dsh-btn-start').textContent = isApp ? 'Restart dsh' : 'Start dsh';
     document.getElementById('nav-count-dsh').textContent = st.running ? '●' : '';
+    const upd = document.getElementById('dsh-btn-update');
+    upd.hidden = !(st.installed && st.update_available && !st.running);
+    if (st.latest_version) upd.textContent = 'Update dsh to ' + st.latest_version;
     const port = st.proxy_port || st.planned_proxy_port;
-    const url = port ? dshUrl(port, st.login_path) : '';
     const hasLogin = !!(st.login_path && st.login_path !== '/');
-    const open = document.getElementById('dsh-open');
-    open.hidden = !isApp;
-    open.href = url || '#';
+    const url = port && hasLogin ? dshUrl(port, st.login_path) : '';
     if (st.running) {
         badge.textContent = (st.label || 'dsh') + ' running';
         badge.className = 'badge badge-green';
     } else if (st.installed) {
-        badge.textContent = 'dsh ' + (st.version || 'installed').replace(/^dsh\s+/i, '');
-        badge.className = 'badge badge-neutral';
+        badge.textContent = 'dsh ' + (st.version || 'installed').replace(/^dsh\s+/i, '') + (st.update_available ? ' · ' + st.latest_version + ' available' : '');
+        badge.className = 'badge ' + (st.update_available ? 'badge-accent' : 'badge-neutral');
     } else {
         badge.textContent = 'dsh not installed';
         badge.className = 'badge badge-yellow';
     }
     if (!st.installed) {
         note.innerHTML = 'DeepSeek Harness is not on this server yet. <strong>Install dsh</strong> runs <code>npm install -g @deepseek-ai/dsh</code> in the terminal below' + (st.npm ? '' : ' (needs Node.js 22+; installing pi from the Pi page provides one)') + '.';
+    } else if (isApp && !hasLogin) {
+        note.innerHTML = 'dsh is starting; waiting for the login URL it prints (it carries a one-time token). It appears above the output as soon as dsh is up.';
     } else if (isApp) {
-        note.innerHTML = 'dsh serves its UI on the server\'s loopback only; the monitor forwards port <code>' + port + '</code> to it. Open it below or <a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">in a new tab</a>. Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.settings_yaml || '~/.dsh/settings.yaml') + '</code> lists every preset as a model; pick one in dsh\'s model picker (Settings &rarr; Models shows it as a custom provider). If the frame stays blank, allow port ' + port + ' through the firewall (<code>sudo ufw allow from 192.168.0.0/24 to any port ' + port + '</code>).';
+        note.innerHTML = 'dsh serves its UI on the server\'s loopback only; the monitor forwards port <code>' + port + '</code> to it (allow it through the firewall for LAN access: <code>sudo ufw allow from 192.168.0.0/24 to any port ' + port + '</code>). Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.settings_yaml || '~/.dsh/settings.yaml') + '</code> lists every preset as a model; pick one in dsh\'s model picker (Settings &rarr; Models shows it as a custom provider).';
     } else if (st.exit_code != null && !st.running) {
-        note.textContent = (st.label || 'dsh') + ' exited with code ' + st.exit_code + '. See the log below; start it again when ready.';
+        note.textContent = (st.label || 'dsh') + ' exited with code ' + st.exit_code + '. See the output below; start it again when ready.';
     } else {
-        note.innerHTML = 'Start runs <code>dsh web</code> in the workspace directory, refreshes its <code>settings.yaml</code> provider with your presets, and forwards port <code>' + (st.planned_proxy_port || '') + '</code> so this browser can reach it.';
+        note.innerHTML = 'Start runs <code>dsh web</code> in the workspace directory, refreshes its <code>settings.yaml</code> provider with your presets, and forwards port <code>' + (st.planned_proxy_port || '') + '</code> so browsers on your network can reach it.' + (st.update_available ? ' A newer dsh (' + escapeHtml(st.latest_version) + ') is on npm; <strong>Update dsh</strong> installs it.' : '');
     }
-    // The embedded UI
-    const frameWrap = document.getElementById('dsh-frame-wrap');
-    const frame = document.getElementById('dsh-frame');
-    // Wait for the login URL before loading the frame: the bare root is
-    // refused ("authentication required").
-    const ready = isApp && hasLogin;
-    frameWrap.hidden = !ready;
-    if (ready && url && frame.src !== url) { frame.src = url; dshFrameLoaded = false; }
-    if (!ready && frame.src) { frame.removeAttribute('src'); }
-    open.hidden = !ready;
-    document.getElementById('dsh-log-details').open = !ready;
-    if (isApp && !hasLogin) {
-        note.innerHTML = 'dsh is starting; waiting for the login URL it prints (it carries a one-time token). The UI opens here as soon as it appears in the log below.';
+    const login = document.getElementById('dsh-login');
+    login.hidden = !(isApp && hasLogin);
+    if (!login.hidden) {
+        document.getElementById('dsh-login-url').textContent = url;
+        document.getElementById('dsh-open').href = url;
+        document.getElementById('dsh-copy-url').onclick = () => copyText(url, 'dsh URL');
+        const token = (st.login_path.match(/[?&]token=([^&\s]+)/) || [])[1] || '';
+        const tokenBtn = document.getElementById('dsh-copy-token');
+        tokenBtn.hidden = !token;
+        tokenBtn.onclick = () => copyText(token, 'dsh token');
     }
 }
 
@@ -3533,26 +3557,29 @@ function browseDshCwd() {
     openFileBrowser('dsh-cwd', 'dir');
 }
 
-async function startDsh() {
+async function dshPost(path, extra) {
     await ensureXterm().catch(err => { showToast(err.message, 'error'); });
     createTerm(dshSession);
     const size = termSize(dshSession);
+    const res = await fetch(path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ cols: size.cols, rows: size.rows }, extra || {})),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'unknown error');
+}
+
+async function startDsh() {
     const cwd = document.getElementById('dsh-cwd').value.trim();
     try {
-        const res = await fetch('/api/dsh/start', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cwd, cols: size.cols, rows: size.rows }),
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'unknown error');
+        await dshPost('/api/dsh/start', { cwd });
     } catch (err) {
         showToast('Could not start dsh: ' + err.message, 'error');
         return;
     }
     await refreshDshStatus();
     attachTerm(dshSession, refreshDshStatus);
-    // dsh takes a few seconds to come up and prints its login URL when it
-    // does; poll status until that URL is known (or the process ends).
+    // dsh prints its login URL a few seconds in; poll until it is known.
     let tries = 0;
     const poll = setInterval(async () => {
         tries++;
@@ -3566,18 +3593,25 @@ async function installDsh() {
     const proceed = await showConfirm('Install dsh',
         'Run npm install -g @deepseek-ai/dsh on this server in the terminal below?', 'Install');
     if (!proceed) return;
-    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
-    createTerm(dshSession);
-    const size = termSize(dshSession);
     try {
-        const res = await fetch('/api/dsh/install', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cols: size.cols, rows: size.rows }),
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'unknown error');
+        await dshPost('/api/dsh/install');
     } catch (err) {
         showToast('Could not run the installer: ' + err.message, 'error');
+        return;
+    }
+    await refreshDshStatus();
+    attachTerm(dshSession, refreshDshStatus);
+}
+
+async function updateDsh() {
+    const st = dshStatus || {};
+    const proceed = await showConfirm('Update dsh',
+        'Run npm install -g @deepseek-ai/dsh@latest' + (st.latest_version ? ' (' + st.latest_version + ')' : '') + ' in the terminal below? A running dsh is stopped first.', 'Update');
+    if (!proceed) return;
+    try {
+        await dshPost('/api/dsh/update');
+    } catch (err) {
+        showToast('Could not run the update: ' + err.message, 'error');
         return;
     }
     await refreshDshStatus();

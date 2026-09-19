@@ -45,6 +45,9 @@ pub struct Status {
     pub exit_code: Option<i32>,
     pub models_json: String,
     pub provider: &'static str,
+    /// Newest version on npm, when known, and whether it beats `version`.
+    pub latest_version: Option<String>,
+    pub update_available: bool,
 }
 
 pub type Shared = Arc<Mutex<Option<Arc<Session>>>>;
@@ -231,7 +234,19 @@ pub fn status(shared: &Shared) -> Status {
         exit_code,
         models_json: models_json_path().display().to_string(),
         provider: PROVIDER,
+        latest_version: None,
+        update_available: false,
     }
+}
+
+/// Fills in the npm-registry version fields of a status.
+pub async fn with_latest(mut st: Status, package: &str) -> Status {
+    st.latest_version = npm_latest_version(package).await;
+    st.update_available = match (&st.latest_version, &st.version) {
+        (Some(l), Some(c)) => version_is_newer(l, c),
+        _ => false,
+    };
+    st
 }
 
 /// One entry in the provider's model list: a preset, as pi will see it.
@@ -499,6 +514,66 @@ impl Session {
     }
 }
 
+/// npm package names for the tools' update checks.
+pub const PI_NPM_PACKAGE: &str = "@earendil-works/pi-coding-agent";
+
+/// Latest published version of an npm package, from the registry, cached
+/// for an hour. None when offline or the registry answers oddly.
+pub async fn npm_latest_version(package: &str) -> Option<String> {
+    use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
+    type Cache = std::collections::HashMap<String, (Instant, Option<String>)>;
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(Cache::new()));
+    if let Some((at, v)) = cache.lock().unwrap().get(package)
+        && at.elapsed() < Duration::from_secs(3600)
+    {
+        return v.clone();
+    }
+    let url = format!("https://registry.npmjs.org/{package}/latest");
+    let fetched = async {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .user_agent("llama-admin-monitor")
+            .build()
+            .ok()?;
+        let resp = client.get(&url).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let body = resp.bytes().await.ok()?;
+        let v: serde_json::Value = serde_json::from_slice(&body).ok()?;
+        v.get("version")?.as_str().map(str::to_string)
+    }
+    .await;
+    cache
+        .lock()
+        .unwrap()
+        .insert(package.to_string(), (Instant::now(), fetched.clone()));
+    fetched
+}
+
+/// True when `latest` is a newer dotted version than `current` ("0.85.1"
+/// vs "pi 0.84.0" — a leading name and a `v` are ignored).
+pub fn version_is_newer(latest: &str, current: &str) -> bool {
+    fn nums(v: &str) -> Vec<u64> {
+        let v = v.trim();
+        let start = v.find(|c: char| c.is_ascii_digit()).unwrap_or(v.len());
+        v[start..]
+            .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .next()
+            .unwrap_or("")
+            .split('.')
+            .filter_map(|n| n.parse::<u64>().ok())
+            .collect()
+    }
+    let (l, c) = (nums(latest), nums(current));
+    if l.is_empty() || c.is_empty() {
+        return false;
+    }
+    l > c
+}
+
 /// Removes CSI/OSC escape sequences and carriage returns from terminal
 /// output so plain-text matching works.
 pub fn strip_ansi(text: &str) -> String {
@@ -537,6 +612,16 @@ pub fn strip_ansi(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_comparison() {
+        assert!(version_is_newer("0.85.1", "0.84.0"));
+        assert!(version_is_newer("0.85.1", "pi 0.85.0"));
+        assert!(version_is_newer("1.0.0", "v0.99.9"));
+        assert!(!version_is_newer("0.85.1", "0.85.1"));
+        assert!(!version_is_newer("0.85.1", "0.86.0"));
+        assert!(!version_is_newer("0.85.1", "unknown"));
+    }
 
     #[test]
     fn ansi_is_stripped() {

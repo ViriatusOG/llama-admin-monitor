@@ -16,6 +16,8 @@ use crate::pi::{self, ModelEntry, Shared};
 pub const PROVIDER: &str = "llama-admin-monitor";
 /// Environment variable dsh reads the (dummy) API key from.
 pub const API_KEY_ENV: &str = "LLAMA_ADMIN_MONITOR_API_KEY";
+/// npm package for install and update checks.
+pub const NPM_PACKAGE: &str = "@deepseek-ai/dsh";
 /// dsh's own listening port (loopback only).
 pub const DSH_PORT: u16 = 3080;
 
@@ -49,6 +51,8 @@ pub struct Status {
     pub login_path: Option<String>,
     pub settings_yaml: String,
     pub provider: &'static str,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
 }
 
 pub fn dsh_home() -> PathBuf {
@@ -99,7 +103,18 @@ pub fn status(session: &Shared, proxy: &SharedProxy) -> Status {
         proxy_port: proxy.lock().unwrap().as_ref().map(|p| p.port),
         settings_yaml: settings_path().display().to_string(),
         provider: PROVIDER,
+        latest_version: None,
+        update_available: false,
     }
+}
+
+pub async fn with_latest(mut st: Status) -> Status {
+    st.latest_version = pi::npm_latest_version(NPM_PACKAGE).await;
+    st.update_available = match (&st.latest_version, &st.version) {
+        (Some(l), Some(c)) => pi::version_is_newer(l, c),
+        _ => false,
+    };
+    st
 }
 
 /// Merges the monitor's provider into `settings.yaml` under

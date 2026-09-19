@@ -1239,20 +1239,67 @@ fn api_pi(
     let status_state = state.clone();
     let status = warp::path!("api" / "pi" / "status")
         .and(warp::get())
-        .map(move || {
-            let mut st = pi::status(&status_state.pi);
-            // The default working directory is what Settings says, else home.
-            if st.cwd.is_none() {
-                let wd = status_state.ui_settings.lock().unwrap().pi_workdir.clone();
-                st.cwd = Some(if wd.is_empty() {
-                    dirs::home_dir()
-                        .map(|h| h.display().to_string())
-                        .unwrap_or_default()
-                } else {
-                    wd
-                });
+        .and_then(move || {
+            let state = status_state.clone();
+            async move {
+                let mut st = pi::status(&state.pi);
+                // The default working directory is what Settings says, else home.
+                if st.cwd.is_none() {
+                    let wd = state.ui_settings.lock().unwrap().pi_workdir.clone();
+                    st.cwd = Some(if wd.is_empty() {
+                        dirs::home_dir()
+                            .map(|h| h.display().to_string())
+                            .unwrap_or_default()
+                    } else {
+                        wd
+                    });
+                }
+                let st = pi::with_latest(st, pi::PI_NPM_PACKAGE).await;
+                Ok::<_, warp::Rejection>(warp::reply::json(&st))
             }
-            warp::reply::json(&st)
+        });
+
+    // Update pi in place with npm (its installer uses npm underneath too).
+    let update_state = state.clone();
+    let update = warp::path!("api" / "pi" / "update")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(move |body: serde_json::Value| {
+            let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
+            let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            let Some(npm) = pi::find_program("npm") else {
+                return warp::reply::json(&serde_json::json!({
+                    "ok": false,
+                    "error": "npm was not found; re-run Install pi instead"
+                }));
+            };
+            let args = vec![
+                "install".to_string(),
+                "-g".to_string(),
+                "--ignore-scripts".to_string(),
+                format!("{}@latest", pi::PI_NPM_PACKAGE),
+            ];
+            match pi::start(
+                &update_state.pi,
+                pi::Launch {
+                    program: npm.display().to_string(),
+                    args,
+                    cwd: home,
+                    label: "pi updater".to_string(),
+                    cols,
+                    rows,
+                    env: Vec::new(),
+                },
+            ) {
+                Ok(()) => {
+                    crate::applog::info("Updating pi (npm install -g @earendil-works/pi-coding-agent@latest)");
+                    warp::reply::json(&serde_json::json!({"ok": true}))
+                }
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+                }
+            }
         });
 
     let start_state = state.clone();
@@ -1385,7 +1432,7 @@ fn api_pi(
             warp::reply::json(&serde_json::json!({"ok": true}))
         });
 
-    status.or(start).or(install).or(stop)
+    status.or(start).or(install).or(update).or(stop)
 }
 
 /// DeepSeek Harness: status, start/stop (`dsh web` in a PTY plus a port
@@ -1405,21 +1452,26 @@ fn api_dsh(
     let status_config = app_config.clone();
     let status = warp::path!("api" / "dsh" / "status")
         .and(warp::get())
-        .map(move || {
-            let mut st = dsh::status(&status_state.dsh, &status_state.dsh_proxy);
-            if st.cwd.is_none() {
-                let wd = status_state.ui_settings.lock().unwrap().dsh_workdir.clone();
-                st.cwd = Some(if wd.is_empty() {
-                    dirs::home_dir()
-                        .map(|h| h.display().to_string())
-                        .unwrap_or_default()
-                } else {
-                    wd
-                });
+        .and_then(move || {
+            let state = status_state.clone();
+            let app_config = status_config.clone();
+            async move {
+                let mut st = dsh::status(&state.dsh, &state.dsh_proxy);
+                if st.cwd.is_none() {
+                    let wd = state.ui_settings.lock().unwrap().dsh_workdir.clone();
+                    st.cwd = Some(if wd.is_empty() {
+                        dirs::home_dir()
+                            .map(|h| h.display().to_string())
+                            .unwrap_or_default()
+                    } else {
+                        wd
+                    });
+                }
+                let st = dsh::with_latest(st).await;
+                let mut v = serde_json::to_value(&st).unwrap_or_default();
+                v["planned_proxy_port"] = serde_json::json!(proxy_port(&app_config));
+                Ok::<_, warp::Rejection>(warp::reply::json(&v))
             }
-            let mut v = serde_json::to_value(&st).unwrap_or_default();
-            v["planned_proxy_port"] = serde_json::json!(proxy_port(&status_config));
-            warp::reply::json(&v)
         });
 
     let start_state = state.clone();
@@ -1516,46 +1568,64 @@ fn api_dsh(
             }
         });
 
+    // Install and update are the same npm command; update pins @latest and
+    // stops a running dsh first so the new version is what starts next.
+    fn npm_install_dsh(
+        state: &AppState,
+        body: &serde_json::Value,
+        update: bool,
+    ) -> warp::reply::Json {
+        let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
+        let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
+        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        let Some(npm) = pi::find_program("npm") else {
+            return warp::reply::json(&serde_json::json!({
+                "ok": false,
+                "error": "npm was not found; install Node.js 22+ (installing pi also provides one) and try again"
+            }));
+        };
+        if update {
+            dsh::stop_proxy(&state.dsh_proxy);
+        }
+        let spec = if update {
+            format!("{}@latest", dsh::NPM_PACKAGE)
+        } else {
+            dsh::NPM_PACKAGE.to_string()
+        };
+        let args = vec!["install".to_string(), "-g".to_string(), spec.clone()];
+        match pi::start(
+            &state.dsh,
+            pi::Launch {
+                program: npm.display().to_string(),
+                args,
+                cwd: home,
+                label: if update { "dsh updater" } else { "dsh installer" }.to_string(),
+                cols,
+                rows,
+                env: Vec::new(),
+            },
+        ) {
+            Ok(()) => {
+                crate::applog::info(format!("Running npm install -g {spec}"));
+                warp::reply::json(&serde_json::json!({"ok": true}))
+            }
+            Err(e) => {
+                warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+            }
+        }
+    }
+
     let install_state = state.clone();
     let install = warp::path!("api" / "dsh" / "install")
         .and(warp::post())
         .and(warp::body::json())
-        .map(move |body: serde_json::Value| {
-            let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
-            let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
-            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-            let Some(npm) = pi::find_program("npm") else {
-                return warp::reply::json(&serde_json::json!({
-                    "ok": false,
-                    "error": "npm was not found; install Node.js 22+ (installing pi also provides one) and try again"
-                }));
-            };
-            let args = vec![
-                "install".to_string(),
-                "-g".to_string(),
-                "@deepseek-ai/dsh".to_string(),
-            ];
-            match pi::start(
-                &install_state.dsh,
-                pi::Launch {
-                    program: npm.display().to_string(),
-                    args,
-                    cwd: home,
-                    label: "dsh installer".to_string(),
-                    cols,
-                    rows,
-                    env: Vec::new(),
-                },
-            ) {
-                Ok(()) => {
-                    crate::applog::info("Installing dsh (npm install -g @deepseek-ai/dsh)");
-                    warp::reply::json(&serde_json::json!({"ok": true}))
-                }
-                Err(e) => {
-                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
-                }
-            }
-        });
+        .map(move |body: serde_json::Value| npm_install_dsh(&install_state, &body, false));
+
+    let update_state = state.clone();
+    let update = warp::path!("api" / "dsh" / "update")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(move |body: serde_json::Value| npm_install_dsh(&update_state, &body, true));
 
     let stop_state = state.clone();
     let stop = warp::path!("api" / "dsh" / "stop")
@@ -1566,5 +1636,5 @@ fn api_dsh(
             warp::reply::json(&serde_json::json!({"ok": true}))
         });
 
-    status.or(start).or(install).or(stop)
+    status.or(start).or(install).or(update).or(stop)
 }

@@ -538,6 +538,7 @@
                 </div>
                 <div class="page-actions">
                     <span class="badge badge-dim" id="pi-status-badge">Checking&hellip;</span>
+                    <button class="btn btn-sm btn-primary" type="button" id="pi-btn-update" onclick="updatePi()" hidden>Update pi</button>
                     <button class="btn btn-sm" type="button" id="pi-btn-refresh" onclick="refreshPiStatus()">Refresh</button>
                 </div>
             </div>
@@ -571,11 +572,11 @@
             <div class="page-header">
                 <div>
                     <h1 class="page-title">DeepSeek Harness</h1>
-                    <div class="page-title-sub"><a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">dsh</a>, DeepSeek's agent harness, running on this server with its web UI embedded here and your presets as its models through the monitor's OpenAI-compatible API.</div>
+                    <div class="page-title-sub"><a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">dsh</a>, DeepSeek's agent harness, running on this server with your presets as its models through the monitor's OpenAI-compatible API. Its web UI opens in its own tab.</div>
                 </div>
                 <div class="page-actions">
                     <span class="badge badge-dim" id="dsh-status-badge">Checking&hellip;</span>
-                    <a class="btn btn-sm" id="dsh-open" href="#" target="_blank" rel="noopener" hidden>Open in new tab</a>
+                    <button class="btn btn-sm btn-primary" type="button" id="dsh-btn-update" onclick="updateDsh()" hidden>Update dsh</button>
                     <button class="btn btn-sm" type="button" onclick="refreshDshStatus()">Refresh</button>
                 </div>
             </div>
@@ -595,19 +596,25 @@
                     </div>
                 </div>
                 <p class="help-text" id="dsh-note"></p>
-                <div class="dsh-frame-wrap" id="dsh-frame-wrap" hidden>
-                    <iframe id="dsh-frame" class="dsh-frame" title="DeepSeek Harness" allow="clipboard-read; clipboard-write"></iframe>
-                </div>
-                <details class="dsh-log" id="dsh-log-details" open>
-                    <summary>dsh process output</summary>
-                    <div class="pi-terminal-wrap dsh-terminal-wrap" id="dsh-terminal-wrap">
-                        <div class="pi-terminal" id="dsh-terminal"></div>
-                        <div class="empty-state pi-terminal-empty" id="dsh-terminal-empty">
-                            <div class="empty-state-title">No dsh session</div>
-                            <p>Pick a workspace directory and press <strong>Start dsh</strong>. Its log appears here; the web UI appears above once it is up.</p>
-                        </div>
+                <div class="dsh-login" id="dsh-login" hidden>
+                    <div>
+                        <div class="form-label">Web UI login URL</div>
+                        <div class="dsh-login-url mono" id="dsh-login-url"></div>
+                        <div class="help-text">dsh prints this at every start; it carries a one-time token. Paste it into a browser on your network, or copy the token when dsh asks for it during setup.</div>
                     </div>
-                </details>
+                    <div class="dsh-login-actions">
+                        <a class="btn btn-sm btn-primary" id="dsh-open" href="#" target="_blank" rel="noopener">Open dsh</a>
+                        <button class="btn btn-sm" type="button" id="dsh-copy-url">Copy URL</button>
+                        <button class="btn btn-sm" type="button" id="dsh-copy-token">Copy token</button>
+                    </div>
+                </div>
+                <div class="pi-terminal-wrap" id="dsh-terminal-wrap">
+                    <div class="pi-terminal" id="dsh-terminal"></div>
+                    <div class="empty-state pi-terminal-empty" id="dsh-terminal-empty">
+                        <div class="empty-state-title">No dsh session</div>
+                        <p>Pick a workspace directory and press <strong>Start dsh</strong>. Its output appears here, and the login URL above once it is up.</p>
+                    </div>
+                </div>
             </div>
         </div>
 
