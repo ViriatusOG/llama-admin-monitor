@@ -1,3 +1,7 @@
+// warp composes every route into one nested type; the tail of that chain
+// exceeds the default trait-solver depth in release builds.
+#![recursion_limit = "256"]
+
 mod applog;
 mod cli;
 mod config;

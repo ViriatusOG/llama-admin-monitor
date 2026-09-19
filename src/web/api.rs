@@ -40,6 +40,8 @@ pub fn api_routes(
     let app_update_check = api_app_update_check();
     let app_logs = api_app_logs();
     let app_update_apply = api_app_update_apply(state);
+    // Boxed so the outer .or() chain stays shallow enough for the compiler.
+    let app = app_update_check.or(app_update_apply).or(app_logs).boxed();
 
     start
         .or(stop)
@@ -61,9 +63,7 @@ pub fn api_routes(
         .or(hf_files)
         .or(hf_download)
         .or(v1_proxy)
-        .or(app_update_check)
-        .or(app_update_apply)
-        .or(app_logs)
+        .or(app)
 }
 
 fn api_start(
