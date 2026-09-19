@@ -60,6 +60,8 @@ pub fn user_bin_dirs() -> Vec<PathBuf> {
     };
     for rel in [
         ".pi/bin",
+        // pi's installer ships its own Node under ~/.local/share/pi-node.
+        ".local/share/pi-node/current/bin",
         ".local/bin",
         ".npm-global/bin",
         ".npm/bin",
@@ -74,6 +76,7 @@ pub fn user_bin_dirs() -> Vec<PathBuf> {
     for versions in [
         home.join(".nvm/versions/node"),
         home.join(".fnm/node-versions"),
+        home.join(".local/share/pi-node"),
     ] {
         if let Ok(entries) = std::fs::read_dir(&versions) {
             let mut dirs: Vec<PathBuf> = entries
@@ -95,15 +98,59 @@ pub fn user_bin_dirs() -> Vec<PathBuf> {
     out.into_iter().filter(|d| d.is_dir()).collect()
 }
 
-/// Where pi is: on PATH, or in one of the per-user directories above.
+/// Where pi is: on PATH, in one of the per-user directories above, or
+/// wherever the user's login shell resolves it (their rc files may add
+/// directories we do not know about). The shell lookup is the slow path,
+/// so its answer is cached for a minute.
 pub fn find_pi() -> Option<PathBuf> {
     if let Some(p) = crate::llama::server::find_on_path(std::path::Path::new("pi")) {
         return Some(p);
     }
-    user_bin_dirs()
+    if let Some(p) = user_bin_dirs()
         .into_iter()
         .map(|d| d.join("pi"))
         .find(|p| p.is_file())
+    {
+        return Some(p);
+    }
+    login_shell_lookup("pi")
+}
+
+/// `bash -lc 'command -v NAME'`, cached per name for 60 s.
+fn login_shell_lookup(name: &str) -> Option<PathBuf> {
+    use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, (Instant, Option<PathBuf>)>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    if let Some((at, hit)) = cache.lock().unwrap().get(name)
+        && at.elapsed() < Duration::from_secs(60)
+    {
+        return hit.clone();
+    }
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| s.ends_with("bash") || s.ends_with("zsh"))
+        .unwrap_or_else(|| "bash".to_string());
+    let found = std::process::Command::new(&shell)
+        .args(["-lc", &format!("command -v {name}")])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|l| l.starts_with('/'))
+                .map(PathBuf::from)
+        })
+        .filter(|p| p.is_file());
+    cache
+        .lock()
+        .unwrap()
+        .insert(name.to_string(), (Instant::now(), found.clone()));
+    found
 }
 
 /// PATH for the spawned process: the directory holding `program` (and,
