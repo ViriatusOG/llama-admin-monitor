@@ -7,6 +7,8 @@ and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+### Fixed
+- The Pi page reported "pi not installed" when the monitor runs as a systemd service: the service's minimal `PATH` lacks the per-user directories a login shell adds (nvm/fnm/volta node versions, npm/pnpm/yarn/bun globals, `~/.local/bin`, pi's own `~/.pi/bin`). The monitor now searches those directories and gives the spawned pi a `PATH` that includes its own `node`.
 
 ## [1.1.1] - 2026-09-19
 ### Changed

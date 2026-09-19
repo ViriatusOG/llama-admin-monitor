@@ -49,30 +49,88 @@ pub struct Status {
 
 pub type Shared = Arc<Mutex<Option<Arc<Session>>>>;
 
-/// Where pi is, if anywhere on PATH (or in the usual per-user npm/pi
-/// locations that a login shell would add but a service does not).
+/// Directories a login shell would have on PATH but a systemd service does
+/// not: pi's own installer, npm/pnpm/yarn/bun globals, and every node
+/// version under nvm, fnm and volta (pi is a node script, so its `node`
+/// must be reachable too).
+pub fn user_bin_dirs() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Some(home) = dirs::home_dir() else {
+        return out;
+    };
+    for rel in [
+        ".pi/bin",
+        ".local/bin",
+        ".npm-global/bin",
+        ".npm/bin",
+        ".bun/bin",
+        ".volta/bin",
+        ".yarn/bin",
+        ".local/share/pnpm",
+        ".cargo/bin",
+    ] {
+        out.push(home.join(rel));
+    }
+    for versions in [home.join(".nvm/versions/node"), home.join(".fnm/node-versions")] {
+        if let Ok(entries) = std::fs::read_dir(&versions) {
+            let mut dirs: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            // Newest version first, as nvm's default usually is.
+            dirs.sort();
+            dirs.reverse();
+            for d in dirs {
+                out.push(d.join("bin"));
+                out.push(d.join("installation").join("bin"));
+            }
+        }
+    }
+    out.push(PathBuf::from("/usr/local/bin"));
+    out.push(PathBuf::from("/opt/homebrew/bin"));
+    out.into_iter().filter(|d| d.is_dir()).collect()
+}
+
+/// Where pi is: on PATH, or in one of the per-user directories above.
 pub fn find_pi() -> Option<PathBuf> {
     if let Some(p) = crate::llama::server::find_on_path(std::path::Path::new("pi")) {
         return Some(p);
     }
-    let home = dirs::home_dir()?;
-    for rel in [
-        ".pi/bin/pi",
-        ".local/bin/pi",
-        ".npm-global/bin/pi",
-        ".bun/bin/pi",
-    ] {
-        let p = home.join(rel);
-        if p.is_file() {
-            return Some(p);
+    user_bin_dirs()
+        .into_iter()
+        .map(|d| d.join("pi"))
+        .find(|p| p.is_file())
+}
+
+/// PATH for the spawned process: the directory holding `program` (and,
+/// when it is a symlink, its target's directory, which is where nvm keeps
+/// `node`), then the user bin directories, then the inherited PATH.
+pub fn child_path(program: Option<&std::path::Path>) -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(p) = program {
+        if let Some(d) = p.parent() {
+            dirs.push(d.to_path_buf());
+        }
+        if let Ok(real) = std::fs::canonicalize(p)
+            && let Some(d) = real.parent()
+        {
+            dirs.push(d.to_path_buf());
         }
     }
-    None
+    dirs.extend(user_bin_dirs());
+    if let Some(existing) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&existing));
+    }
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| seen.insert(d.clone()));
+    std::env::join_paths(dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
 }
 
 fn pi_version(path: &PathBuf) -> Option<String> {
     let out = std::process::Command::new(path)
         .arg("--version")
+        .env("PATH", child_path(Some(path)))
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
@@ -262,6 +320,7 @@ pub fn start(
     cmd.args(args);
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
+    cmd.env("PATH", child_path(Some(std::path::Path::new(program))));
     cmd.env("COLORTERM", "truecolor");
     let child = pair
         .slave

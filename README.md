@@ -163,7 +163,7 @@ sudo systemctl enable --now llama-admin-monitor
 systemctl status llama-admin-monitor
 ```
 
-Logs go to the journal (`journalctl -u llama-admin-monitor -f`). In-app updates work under systemd: the new binary re-executes in place and the unit keeps supervising it.
+Logs go to the journal (`journalctl -u llama-admin-monitor -f`). In-app updates work under systemd: the new binary re-executes in place and the unit keeps supervising it. The service's `PATH` is minimal, so the monitor looks for tools such as `pi` in the usual per-user install directories (`~/.pi/bin`, `~/.local/bin`, nvm/fnm/volta node versions, npm/pnpm/yarn/bun globals) as well as `PATH`.
 
 ### Memory slot details
 
