@@ -767,7 +767,11 @@ fn api_bench_run(
                 let (default_batch, default_ubatch, default_threads) = {
                     let cfg = state.server_config.lock().unwrap();
                     if let Some(c) = cfg.as_ref() {
-                        (c.batch_size, c.ubatch_size, c.threads.unwrap_or(cpu_threads))
+                        (
+                            c.batch_size,
+                            c.ubatch_size,
+                            c.threads.unwrap_or(cpu_threads),
+                        )
                     } else {
                         (2048, 512, cpu_threads)
                     }
@@ -877,10 +881,21 @@ mod tests {
 
     #[test]
     fn hop_by_hop_headers_are_stripped_case_insensitively() {
-        for h in ["Transfer-Encoding", "content-length", "Connection", "Host", "keep-alive"] {
+        for h in [
+            "Transfer-Encoding",
+            "content-length",
+            "Connection",
+            "Host",
+            "keep-alive",
+        ] {
             assert!(is_hop_by_hop(h), "{h}");
         }
-        for h in ["Content-Type", "authorization", "x-request-id", "cache-control"] {
+        for h in [
+            "Content-Type",
+            "authorization",
+            "x-request-id",
+            "cache-control",
+        ] {
             assert!(!is_hop_by_hop(h), "{h}");
         }
     }

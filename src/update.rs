@@ -338,7 +338,10 @@ mod tests {
         ];
         let (stable, beta) = latest_per_track(&releases, Some("llama-admin-monitor-linux-x86_64"));
         assert_eq!(stable.as_ref().map(|r| r.tag.as_str()), Some("v2026.9.20"));
-        assert_eq!(beta.as_ref().map(|r| r.tag.as_str()), Some("v2026.9.20-beta.2"));
+        assert_eq!(
+            beta.as_ref().map(|r| r.tag.as_str()),
+            Some("v2026.9.20-beta.2")
+        );
         assert_eq!(beta.unwrap().version, "2026.9.20-beta.2");
         assert_eq!(
             stable.unwrap().asset_url.as_deref(),
