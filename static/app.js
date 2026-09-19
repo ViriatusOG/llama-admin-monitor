@@ -2590,8 +2590,27 @@ async function checkAppUpdates(force = false) {
             return;
         }
         if (data.current_track === 'dev') {
-            note.textContent = 'This is a local cargo build; install a release from GitHub to enable in-app updates. Latest stable: ' + releaseLabel(data.stable) + '. Latest beta: ' + releaseLabel(data.beta) + '.';
+            // A local cargo build has no release track, so there is nothing to
+            // "update" to; but a GitHub release can replace it, after which
+            // the normal update flow applies.
+            note.textContent = 'This is a local cargo build. Installing a release below replaces this binary with the GitHub build for that track and enables automatic update checks.';
             note.hidden = false;
+            if (data.stable && data.stable.asset_url) {
+                document.getElementById('update-available-title').textContent = 'Install the stable release';
+                document.getElementById('update-available-desc').textContent = 'Recommended for most users · ' + releaseLabel(data.stable);
+                const btn = document.getElementById('btn-update-current');
+                btn.textContent = 'Install ' + data.stable.tag;
+                btn.onclick = () => applyAppUpdate('main', data.stable.tag);
+                document.getElementById('updates-available-row').hidden = false;
+            }
+            if (data.beta && data.beta.asset_url) {
+                document.getElementById('update-switch-title').textContent = 'Install the beta release';
+                document.getElementById('update-switch-desc').textContent = 'Newer features, less tested · ' + releaseLabel(data.beta);
+                const btn = document.getElementById('btn-update-switch');
+                btn.textContent = 'Install ' + data.beta.tag;
+                btn.onclick = () => applyAppUpdate('beta', data.beta.tag);
+                document.getElementById('updates-switch-row').hidden = false;
+            }
             return;
         }
 
