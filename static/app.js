@@ -363,7 +363,8 @@ function fileBrowserSelect(path) {
 
 // --- Device picker (preset editor) ---
 
-let deviceListCache = null;
+// Keyed by backend: a separate CUDA build lists different devices.
+const deviceListCache = {};
 
 function selectedDevices() {
     const ticked = Array.from(document.querySelectorAll('#modal-devices input[type="checkbox"]:checked')).map(i => i.value);
@@ -376,28 +377,30 @@ function selectedDevices() {
 async function loadDevicePicker(selected) {
     const host = document.getElementById('modal-devices');
     const chosen = selected.split(',').map(s => s.trim()).filter(Boolean);
+    const backend = document.getElementById('modal-backend').value || 'vulkan';
     host.dataset.unlisted = '';
-    if (!deviceListCache) {
+    if (!deviceListCache[backend]) {
         host.innerHTML = '<span class="help-text">Loading devices from llama-server\u2026</span>';
         try {
-            const res = await fetch('/api/devices');
+            const res = await fetch('/api/devices?backend=' + encodeURIComponent(backend));
             const data = await res.json();
             if (data.error) throw new Error(data.error);
-            deviceListCache = data.devices || [];
+            deviceListCache[backend] = data.devices || [];
         } catch (err) {
             host.innerHTML = '<span class="help-text">Could not list devices: ' + escapeHtml(err.message) + (chosen.length ? ' \u00b7 keeping: ' + escapeHtml(chosen.join(', ')) : '') + '</span>';
             host.dataset.unlisted = chosen.join(',');
             return;
         }
     }
-    if (deviceListCache.length === 0) {
+    const devices = deviceListCache[backend];
+    if (devices.length === 0) {
         host.innerHTML = '<span class="help-text">llama-server reports no offload devices (CPU build?).</span>';
         host.dataset.unlisted = chosen.join(',');
         return;
     }
-    const known = new Set(deviceListCache.map(d => d.id));
+    const known = new Set(devices.map(d => d.id));
     host.dataset.unlisted = chosen.filter(c => !known.has(c)).join(',');
-    host.innerHTML = deviceListCache.map(d =>
+    host.innerHTML = devices.map(d =>
         '<label class="device-option"><input type="checkbox" value="' + escapeHtml(d.id) + '"' + (chosen.includes(d.id) ? ' checked' : '') + '>' +
         '<span class="mono">' + escapeHtml(d.id) + '</span><span>' + escapeHtml(d.name) + '</span>' +
         (d.total_mib ? '<span class="help-text">' + (d.total_mib / 1024).toFixed(1) + ' GB</span>' : '') + '</label>'
@@ -410,6 +413,8 @@ function onBackendChange() {
     const ts = document.getElementById('modal-tensor-split');
     ts.disabled = isCuda;
     ts.title = isCuda ? 'Not used -- a CUDA build only sees the NVIDIA GPU' : '';
+    // The device list belongs to the selected build; keep the ticks.
+    loadDevicePicker(selectedDevices());
 }
 
 // --- Optimize / Benchmark ---
@@ -1785,7 +1790,7 @@ function openPresetModal(mode, id) {
         // GPU
         setVal('modal-tensor-split', p.tensor_split);
         setVal('modal-backend', p.backend || 'vulkan');
-        loadDevicePicker(p.devices || '');
+        const dp = document.getElementById('modal-devices'); dp.innerHTML = ''; dp.dataset.unlisted = p.devices || '';
         setOpt('modal-split-mode', p.split_mode);
         numOrEmpty('modal-main-gpu', p.main_gpu);
         // Threading
@@ -1814,7 +1819,7 @@ function openPresetModal(mode, id) {
         setVal('modal-batch-size', 2048);
         setVal('modal-ubatch-size', 2048);
         setVal('modal-parallel-slots', 1);
-        loadDevicePicker('');
+        document.getElementById('modal-devices').dataset.unlisted = '';
     }
     onBackendChange();
 

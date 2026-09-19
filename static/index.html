@@ -756,10 +756,10 @@
                         <span class="help-text">Loading devices from llama-server&hellip;</span>
                     </div>
                 </div>
-                <label class="modal-field" title="Vulkan runs across all GPUs. CUDA is NVIDIA-only but noticeably faster -- use it for models that fit on the NVIDIA card alone.">Backend
+                <label class="modal-field" title="Which llama-server build to launch. 'Configured binary' is the path in Settings. 'Separate CUDA build' expects a CUDA-only build in a sibling build-cuda/bin directory and disables tensor split. A binary compiled with both -DGGML_CUDA=ON and -DGGML_VULKAN=ON needs no switching: pick CUDA0 under Devices.">Build
                     <select id="modal-backend" onchange="onBackendChange()">
-                        <option value="vulkan">Vulkan (all GPUs)</option>
-                        <option value="cuda">CUDA (NVIDIA only)</option>
+                        <option value="vulkan">Configured binary (Settings)</option>
+                        <option value="cuda">Separate CUDA build (build-cuda/bin)</option>
                     </select>
                 </label>
                 <div class="modal-row">

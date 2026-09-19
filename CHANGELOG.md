@@ -8,6 +8,7 @@ Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
 ### Added
+- The preset's Backend field is now labelled **Build** and explained: it picks the configured binary or a separate `build-cuda` tree. The Devices picker lists the devices of whichever build is selected. A single llama.cpp build with both `-DGGML_CUDA=ON -DGGML_VULKAN=ON` needs no switching: pick `CUDA0` under Devices.
 - Preset editor gains a **Devices** picker (GPU distribution section) listing what `llama-server --list-devices` reports; ticking one card passes `--device` so a model stays off the others. Shown as a `dev` chip on the Presets page.
 - Models page pairs projector files with their models (same Hugging Face repo, or the model's name in the projector's filename): a vision model lists its `mmproj`, a projector lists the models it belongs to, and unmatched projectors say so. Picking such a model in the preset editor fills the projector field automatically.
 - CPU card shows the package/die temperature from hwmon (`k10temp`/`zenpower` on AMD, `coretemp` on Intel, `cpu_thermal` on ARM boards; thermal zones as a fallback).

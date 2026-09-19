@@ -108,20 +108,7 @@ pub async fn start_server(
     // default "build" one, since llama.cpp can only target one GPU
     // backend per build.
     let use_cuda = config.backend == "cuda";
-    let binary_path = if use_cuda {
-        let s = app_config.llama_server_path.display().to_string();
-        let swapped = s.replace("/build/bin/", "/build-cuda/bin/");
-        let p = PathBuf::from(&swapped);
-        if !p.exists() {
-            anyhow::bail!(
-                "CUDA build not found at {}. Build it with: cmake -B build-cuda -DGGML_CUDA=ON && cmake --build build-cuda --config Release",
-                p.display()
-            );
-        }
-        p
-    } else {
-        app_config.llama_server_path.clone()
-    };
+    let binary_path = binary_for_backend(app_config, &config.backend)?;
 
     if !app_config.llama_server_cwd.is_dir() {
         anyhow::bail!(
@@ -377,6 +364,29 @@ pub async fn start_server(
     Ok(())
 }
 
+/// The llama-server binary a preset's `backend` selects. "cuda" means a
+/// separate CUDA-only build living in a sibling `build-cuda` directory;
+/// anything else is the configured binary. A single build compiled with
+/// both GGML_CUDA and GGML_VULKAN needs no switching: its device list
+/// carries CUDA0 next to the Vulkan devices.
+pub fn binary_for_backend(app_config: &AppConfig, backend: &str) -> Result<PathBuf> {
+    if backend != "cuda" {
+        return Ok(app_config.llama_server_path.clone());
+    }
+    let s = app_config.llama_server_path.display().to_string();
+    let swapped = s.replace("/build/bin/", "/build-cuda/bin/");
+    let p = PathBuf::from(&swapped);
+    if !p.exists() {
+        anyhow::bail!(
+            "CUDA build not found at {}. Either build it (cmake -B build-cuda -DGGML_CUDA=ON \
+             && cmake --build build-cuda --config Release) or rebuild the main binary with \
+             -DGGML_CUDA=ON -DGGML_VULKAN=ON and pick CUDA0 under Devices instead.",
+            p.display()
+        );
+    }
+    Ok(p)
+}
+
 /// One offload device as printed by `llama-server --list-devices`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct GgmlDevice {
@@ -420,19 +430,28 @@ pub fn parse_device_list(text: &str) -> Vec<GgmlDevice> {
 
 /// Runs `llama-server --list-devices` with the same environment a launch
 /// would get, so the names match what `--device` accepts.
-pub async fn list_devices(state: &AppState, app_config: &AppConfig) -> Result<Vec<GgmlDevice>> {
-    let server_path = &app_config.llama_server_path;
+pub async fn list_devices(
+    state: &AppState,
+    app_config: &AppConfig,
+    backend: &str,
+) -> Result<Vec<GgmlDevice>> {
+    let server_path = binary_for_backend(app_config, backend)?;
     if server_path.components().count() > 1 {
-        check_executable(server_path)?;
+        check_executable(&server_path)?;
     }
-    let mut cmd = TokioCommand::new(server_path);
+    let mut cmd = TokioCommand::new(&server_path);
     cmd.arg("--list-devices");
     if app_config.llama_server_cwd.is_dir() {
         cmd.current_dir(&app_config.llama_server_cwd);
     }
     let gpu_env = state.gpu_env.lock().unwrap().clone();
     let cwd = app_config.llama_server_cwd.display().to_string();
-    match app_config.gpu_backend.as_str() {
+    let effective_backend = if backend == "cuda" {
+        "nvidia"
+    } else {
+        app_config.gpu_backend.as_str()
+    };
+    match effective_backend {
         "nvidia" => {
             for (key, val) in build_nvidia_env(&gpu_env) {
                 cmd.env(key, val);

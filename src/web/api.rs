@@ -965,9 +965,12 @@ fn api_devices(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "devices")
         .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
         .and(warp::any().map(move || (state.clone(), app_config.clone())))
         .and_then(
-            |(state, app_config): (AppState, Arc<AppConfig>)| async move {
+            |q: std::collections::HashMap<String, String>,
+             (state, app_config): (AppState, Arc<AppConfig>)| async move {
+                let backend = q.get("backend").cloned().unwrap_or_default();
                 let ui = state.ui_settings.lock().unwrap().clone();
                 let mut eff_config = (*app_config).clone();
                 if !ui.llama_server_path.is_empty() {
@@ -976,7 +979,7 @@ fn api_devices(
                 if !ui.llama_server_cwd.is_empty() {
                     eff_config.llama_server_cwd = PathBuf::from(&ui.llama_server_cwd);
                 }
-                let reply = match server::list_devices(&state, &eff_config).await {
+                let reply = match server::list_devices(&state, &eff_config, &backend).await {
                     Ok(devices) => warp::reply::json(&serde_json::json!({"devices": devices})),
                     Err(e) => warp::reply::json(&serde_json::json!({"error": format!("{e:#}")})),
                 };
