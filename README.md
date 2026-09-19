@@ -1,14 +1,18 @@
 # Llama Admin Monitor
 
-Web control panel for [llama.cpp](https://github.com/ggerganov/llama.cpp) servers: live GPU and inference monitoring, model management with Hugging Face downloads, multi-GPU VRAM visualisation, and automated tensor-split benchmarking — in a single self-contained Rust binary.
+Web control panel for [llama.cpp](https://github.com/ggerganov/llama.cpp) servers: live GPU, CPU, memory and disk monitoring with an nvtop-style activity view, one-click installs of prebuilt llama.cpp builds (Vulkan, CUDA, ROCm, CPU, Metal), model management with Hugging Face downloads, multi-GPU VRAM visualisation, automated tensor-split benchmarking, an OpenAI-compatible endpoint that follows whichever model is loaded, and in-app updates — in a single self-contained Rust binary.
 
 It began as a fork of [arte-fact/llama-monitor](https://github.com/arte-fact/llama-monitor) (extended into an admin dashboard as [ViriatusOG/llama-monitor](https://github.com/ViriatusOG/llama-monitor)) and now carries a UI modelled on [LLama-GUI](https://github.com/thomas9120/LLama-GUI): a grouped sidebar, card-based pages, and five WCAG-AA themes.
 
 ## Screenshots
 
-Monitor, in the **Nebula** theme:
+Monitor, in the **Nebula** theme — inference, GPU activity with five minutes of history and the processes on each GPU, pooled VRAM, CPU, memory, the disk behind the models directory with SMART health, and one card per GPU:
 
 ![Monitor](docs/images/monitor.png)
+
+| Install llama.cpp | Logs |
+| --- | --- |
+| ![Install](docs/images/install.png) | ![Logs](docs/images/logs.png) |
 
 | Presets | Models |
 | --- | --- |
@@ -180,11 +184,11 @@ SMART is re-read once a minute. Without the rule the card still shows throughput
 
 ## Updates and release tracks
 
-There are two tracks. **main** is stable: tags like `v2026.9.20` publish as GitHub releases. **beta** carries new features first: tags containing `-beta` (for example `v2026.9.21-beta.1`) publish as pre-releases. The release workflow bakes the tag and track into the binary, and **Settings → App Updates** shows both, offers the newer release on your track, and lets you switch tracks.
+There are two tracks. **main** is stable: SemVer tags such as `v1.0.0` publish as GitHub releases. **beta** carries new features first: zero-padded CalVer tags containing `-beta` (for example `v2026.09.22-beta.07`) publish as pre-releases. The release workflow bakes the tag and track into the binary, and **Settings → App Updates** shows both, offers the newer release on your track (a sidebar dot and a toast also announce it), and lets you switch tracks. A locally compiled build shows "local build" and can install either track's release to join it.
 
 Installing an update downloads this platform's asset next to the running executable, checks its size and executable header, stops llama-server, replaces the binary atomically and re-executes it with the same arguments — so it works as a plain process or under systemd (`Restart=always` also covers the rare failure to re-exec). If the download or the swap fails, the running binary is left untouched and the error is shown in the dialog. The executable's directory must be writable by the user running the monitor.
 
-Because the monitor has no authentication, anyone who can reach its port can trigger an update — one more reason to keep it on a trusted network.
+Release checks are cached for five minutes (Check for updates bypasses the cache) and fall back to GitHub's Atom feed when the API rate limit is hit; set `LLAMA_ADMIN_GITHUB_TOKEN` to raise the limit. Because the monitor has no authentication, anyone who can reach its port can trigger an update — one more reason to keep it on a trusted network.
 
 ## CLI reference
 
@@ -213,13 +217,15 @@ llama.cpp expects tensor splits **slash-separated** — `65/35` for two GPUs, `7
 
 The sidebar groups the workspace the way LLama-GUI does:
 
-- **Monitor** — runtime strip, process output, inference card, VRAM bar and one card per GPU. A **Live** badge appears while the server runs.
+- **Monitor** — runtime strip, process output, and the card grid: inference, GPU activity (nvtop-style), VRAM pool, CPU, memory, disk and one card per GPU. Cards can be dragged, reordered with the keyboard and hidden; a **Live** badge appears while the server runs.
+- **Logs** — the monitor's own event log with a problems-only filter and Download. llama-server's own output stays in the Process Output card.
 - **Tune → Presets** — the saved configurations; the active one is what the sidebar's Start button launches.
-- **Tune → Benchmark** — tensor-split sweeps with one-click apply, plus the VRAM bar for reference.
+- **Tune → Benchmark** — tensor-split (and batch/thread) sweeps with one-click apply.
 - **Interact → Chat** — streaming chat against the running server.
 - **Library → Models** — the models directory with VRAM fit and Hugging Face provenance, download and delete.
+- **Library → Install** — prebuilt llama.cpp builds per backend, with update-in-place when upstream publishes a newer tag.
 
-The sidebar footer holds the runtime summary, preset and port selectors, Start/Stop, the theme menu and **Settings** (paths and GPU environment).
+The sidebar footer holds the runtime summary (endpoint and the OpenAI-compatible API URL with a Copy button), preset and port selectors, Start/Stop, the theme menu and **Settings** (paths, GPU environment, App Updates).
 
 ### Themes
 
@@ -270,6 +276,7 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `GET` | `/api/settings` | Get persisted UI settings |
 | `PUT` | `/api/settings` | Save UI settings |
 | `GET` | `/api/browse?path=&filter=` | Browse the filesystem |
+| `GET` | `/api/devices?backend=` | Devices `llama-server --list-devices` reports for the configured binary, `cuda`, or `build:<id>` |
 | `GET` | `/api/gpu-env` | Get GPU environment config |
 | `PUT` | `/api/gpu-env` | Save GPU environment config |
 | `ANY` | `/v1/*` | Transparent proxy to the running llama-server's OpenAI-compatible API |
