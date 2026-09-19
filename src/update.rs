@@ -171,6 +171,89 @@ async fn fetch_releases(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
     serde_json::from_slice(&bytes).context("unexpected GitHub API response")
 }
 
+/// The releases Atom feed is served by github.com, not the API, so it is
+/// not counted against the 60-per-hour unauthenticated API quota. It lists
+/// every published release (pre-releases included) newest first, but does
+/// not carry the prerelease flag or the asset list, so those are derived:
+/// a tag containing "-beta" is a pre-release, and the platform asset is
+/// assumed to live at the conventional download URL (the download step
+/// verifies it really is a binary).
+async fn fetch_releases_atom(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
+    let url = format!("https://github.com/{REPO}/releases.atom");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .context("releases feed request failed")?
+        .error_for_status()
+        .context("releases feed returned an error")?;
+    let text = resp.text().await.context("releases feed cut short")?;
+    let releases = parse_releases_atom(&text);
+    if releases.is_empty() {
+        bail!("releases feed had no entries");
+    }
+    Ok(releases)
+}
+
+fn parse_releases_atom(xml: &str) -> Vec<GhRelease> {
+    fn tag_text<'a>(block: &'a str, tag: &str) -> Option<&'a str> {
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        let start = block.find(&open)? + open.len();
+        let end = block[start..].find(&close)? + start;
+        Some(block[start..end].trim())
+    }
+    xml.split("<entry>")
+        .skip(1)
+        .filter_map(|entry| {
+            let tag = tag_text(entry, "title")?.to_string();
+            if !tag.starts_with('v') {
+                return None;
+            }
+            let assets = ["linux-x86_64", "linux-aarch64", "macos-x86_64", "macos-aarch64"]
+                .iter()
+                .map(|p| {
+                    let name = format!("llama-admin-monitor-{p}");
+                    GhAsset {
+                        browser_download_url: format!(
+                            "https://github.com/{REPO}/releases/download/{tag}/{name}"
+                        ),
+                        name,
+                    }
+                })
+                .collect();
+            Some(GhRelease {
+                prerelease: is_beta_tag(&tag),
+                draft: false,
+                published_at: tag_text(entry, "updated").map(str::to_string),
+                html_url: format!("https://github.com/{REPO}/releases/tag/{tag}"),
+                assets,
+                tag_name: tag,
+            })
+        })
+        .collect()
+}
+
+/// Release tags containing "-beta" belong to the beta track.
+pub fn is_beta_tag(tag: &str) -> bool {
+    tag.contains("-beta")
+}
+
+/// The API listing, falling back to the Atom feed when the API is
+/// unavailable (typically its rate limit). The API error is kept in the
+/// message if both fail.
+async fn list_releases(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
+    match fetch_releases(client).await {
+        Ok(releases) => Ok(releases),
+        Err(api_err) => {
+            println!("[update] GitHub API unavailable ({api_err:#}); using the releases feed");
+            fetch_releases_atom(client)
+                .await
+                .with_context(|| format!("{api_err:#}"))
+        }
+    }
+}
+
 fn to_info(r: &GhRelease, asset: Option<&str>) -> ReleaseInfo {
     ReleaseInfo {
         tag: r.tag_name.clone(),
@@ -221,7 +304,7 @@ pub async fn check_updates(force: bool) -> Result<UpdateStatus> {
 
 async fn check_updates_uncached() -> Result<UpdateStatus> {
     let client = client()?;
-    let releases = fetch_releases(&client).await?;
+    let releases = list_releases(&client).await?;
     let asset = platform_asset();
     let (stable, beta) = latest_per_track(&releases, asset.as_deref());
     let current_version = current_version();
@@ -320,7 +403,7 @@ pub async fn apply_update(state: AppState, track: String) -> Result<()> {
 
     set_phase(&state, "Checking releases");
     let client = client()?;
-    let releases = fetch_releases(&client).await?;
+    let releases = list_releases(&client).await?;
     let (stable, beta) = latest_per_track(&releases, Some(&asset));
     let target = match track.as_str() {
         "main" => stable,
@@ -428,6 +511,32 @@ mod tests {
         let releases = vec![release("v1", false, false)];
         let (stable, _) = latest_per_track(&releases, Some("llama-admin-monitor-macos-aarch64"));
         assert_eq!(stable.unwrap().asset_url, None);
+    }
+
+    #[test]
+    fn atom_feed_yields_releases_newest_first() {
+        let xml = concat!(
+            "<?xml version=\"1.0\"?><feed><title>Release notes</title>",
+            "<entry><id>x/v2026.9.21-beta.2</id><updated>2026-09-19T09:32:44Z</updated>",
+            "<title>v2026.9.21-beta.2</title></entry>",
+            "<entry><id>x/v2026.9.20</id><updated>2026-09-18T23:41:07Z</updated>",
+            "<title>v2026.9.20</title></entry></feed>"
+        );
+        let releases = parse_releases_atom(xml);
+        assert_eq!(releases.len(), 2);
+        assert_eq!(releases[0].tag_name, "v2026.9.21-beta.2");
+        assert!(releases[0].prerelease);
+        assert!(!releases[1].prerelease);
+        assert_eq!(releases[0].published_at.as_deref(), Some("2026-09-19T09:32:44Z"));
+        let (stable, beta) = latest_per_track(&releases, Some("llama-admin-monitor-linux-x86_64"));
+        assert_eq!(
+            beta.unwrap().asset_url.as_deref(),
+            Some(concat!(
+                "https://github.com/ViriatusOG/llama-admin-monitor/releases/download/",
+                "v2026.9.21-beta.2/llama-admin-monitor-linux-x86_64"
+            ))
+        );
+        assert_eq!(stable.unwrap().tag, "v2026.9.20");
     }
 
     #[test]
