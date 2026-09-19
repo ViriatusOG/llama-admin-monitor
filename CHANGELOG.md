@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer) with the format `YYYY.MM.DD`. 
 Backwards compatibility is preserved unless explicitly noted.
 
+## [Unreleased]
+### Changed
+- In-app updates no longer need a git checkout or shell tools. The binary knows its release tag and track (baked in by the release workflow), queries GitHub Releases directly, verifies the download's size and executable header, stops llama-server itself and swaps the binary atomically before re-executing. A failed download or swap leaves the running binary untouched.
+- Tags containing `-beta` are published as GitHub pre-releases; the beta track installs those, so switching tracks now really changes the binary.
+- The `/v1` proxy strips hop-by-hop headers in both directions and reuses one pooled HTTP client.
+- Benchmark sweeps larger than six runs ask for confirmation with the run count; the default thread count now follows the machine's cores instead of a fixed 8.
+- The dashboard HTML is rendered once at startup instead of shelling out to `git` on every page load.
+- CI also runs on the `beta` branch.
+
 ## [2026.9.20]
 ### Fixed
 - Fixed an issue where the `BETA` UI badge was hardcoded into stable release binaries.

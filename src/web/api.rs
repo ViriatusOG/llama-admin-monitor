@@ -759,12 +759,17 @@ fn api_bench_run(
                 };
 
                 // Fall back to preset defaults if user didn't specify arrays for them
+                // With no thread count configured, llama-bench's own
+                // default is the physical core count; mirror that.
+                let cpu_threads = std::thread::available_parallelism()
+                    .map(|n| n.get() as u32)
+                    .unwrap_or(8);
                 let (default_batch, default_ubatch, default_threads) = {
                     let cfg = state.server_config.lock().unwrap();
                     if let Some(c) = cfg.as_ref() {
-                        (c.batch_size, c.ubatch_size, c.threads.unwrap_or(8))
+                        (c.batch_size, c.ubatch_size, c.threads.unwrap_or(cpu_threads))
                     } else {
-                        (512, 512, 8)
+                        (2048, 512, cpu_threads)
                     }
                 };
 

@@ -30,7 +30,7 @@ Same dashboard in the **Mint** light theme:
 - **Inference card** — prompt/generation speed, slot status and KV-cache occupancy (with a bar that turns amber at 80 % and red at 95 %), from llama-server's Prometheus endpoint
 - **VRAM usage card** — one segmented bar across every GPU, coloured per vendor (AMD, NVIDIA, Intel) with an estimated context/KV segment and free space, labelled in GB
 - **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together
-- **CPU, Memory and Disk cards** — host utilisation, load average, RAM and swap, disk read/write throughput and free space on the models volume (from `/proc` on Linux)
+- **CPU, Memory and Disk cards** — per-core utilisation grid and CPU model, load average, RAM and swap, populated DIMM slots with type and speed (via `dmidecode`, see below), disk read/write throughput and free space on the models volume (from `/proc` on Linux)
 - **Arrange the dashboard** — drag cards by their grip (or move them with the arrow keys) and hide the ones you don't need; the layout is remembered per browser
 
 ### Server management
@@ -46,11 +46,13 @@ Same dashboard in the **Mint** light theme:
 - **Delete** models from disk without leaving the dashboard
 
 ### Optimisation
-- **Benchmark page** — sweeps a list of tensor-split ratios through `llama-bench`, reports prompt and generation throughput, marks the fastest and applies it to a preset in one click; cancellable, keeping results so far
+- **Benchmark page** — sweeps tensor-split ratios, and optionally batch sizes, micro-batch sizes and thread counts, through `llama-bench`; reports prompt and generation throughput per combination, marks the fastest and applies it to a preset in one click. Large sweeps ask for confirmation with the run count; cancellable, keeping results so far
 
 ### Interface
 - **Five themes** — Tokyo and Nebula (dark), Graphite (mid-tone), Cappuccino and Mint (light), picked from the sidebar and remembered per browser
-- **Integrated chat** — streaming chat proxied to the running server, with collapsible reasoning blocks and Markdown rendering
+- **OpenAI-compatible proxy** — everything under `/v1/*` is forwarded to the running llama-server, so clients such as SillyTavern or the OpenAI SDKs can point at `http://<monitor>:7778/v1` and follow whichever model is loaded
+- **Integrated chat** — streaming chat through that proxy, with collapsible reasoning blocks and Markdown rendering
+- **In-app updates** — Settings → App Updates installs the newest GitHub release for your track (stable `main` or pre-release `beta`) and restarts; see [Updates and release tracks](#updates-and-release-tracks)
 - **File browser** for binaries, directories and models; **persistent settings** (preset, port, paths, models directory); **responsive** layout with a navigation drawer on phones; installable as a PWA
 
 ## Supported hardware
@@ -66,6 +68,15 @@ Multiple vendors are monitored at once — a machine with both an AMD and an NVI
 **RDNA 4 note:** `gfx1201` (RX 9070 / 9070 XT / 9070 GRE) requires ROCm 7.2 or newer for `rocminfo` to enumerate the GPU. The versions of `rocminfo` and `rocm-smi` in Ubuntu's default repositories predate RDNA 4 and will not detect these cards; install ROCm from AMD's repository instead.
 
 ## Installation
+
+### Prebuilt binaries
+
+Each [release](https://github.com/ViriatusOG/llama-admin-monitor/releases) ships static binaries for Linux (x86_64, aarch64) and macOS (x86_64, aarch64), plus a `SHA256SUMS` file. Only release binaries can update themselves from the UI; a local `cargo build` shows a `DEV` badge and leaves updating to you.
+
+```bash
+curl -fL -o llama-admin-monitor https://github.com/ViriatusOG/llama-admin-monitor/releases/latest/download/llama-admin-monitor-linux-x86_64
+chmod +x llama-admin-monitor
+```
 
 ### From source
 
@@ -126,6 +137,26 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable --now llama-admin-monitor
 ```
+
+### Memory slot details
+
+DIMM slot, type and speed come from `dmidecode -t 17`, which needs root to read the SMBIOS tables. The monitor tries `dmidecode` and then `sudo -n dmidecode -t 17`; the second works once a passwordless sudo rule exists for exactly that command:
+
+```bash
+sudo apt install -y dmidecode
+echo "$USER ALL=(root) NOPASSWD: /usr/sbin/dmidecode -t 17" | sudo tee /etc/sudoers.d/llama-admin-monitor
+sudo chmod 0440 /etc/sudoers.d/llama-admin-monitor
+```
+
+Without it the Memory card still shows usage, and the slot row explains what is missing.
+
+## Updates and release tracks
+
+There are two tracks. **main** is stable: tags like `v2026.9.20` publish as GitHub releases. **beta** carries new features first: tags containing `-beta` (for example `v2026.9.21-beta.1`) publish as pre-releases. The release workflow bakes the tag and track into the binary, and **Settings → App Updates** shows both, offers the newer release on your track, and lets you switch tracks.
+
+Installing an update downloads this platform's asset next to the running executable, checks its size and executable header, stops llama-server, replaces the binary atomically and re-executes it with the same arguments — so it works as a plain process or under systemd (`Restart=always` also covers the rare failure to re-exec). If the download or the swap fails, the running binary is left untouched and the error is shown in the dialog. The executable's directory must be writable by the user running the monitor.
+
+Because the monitor has no authentication, anyone who can reach its port can trigger an update — one more reason to keep it on a trusted network.
 
 ## CLI reference
 
@@ -213,7 +244,9 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `GET` | `/api/browse?path=&filter=` | Browse the filesystem |
 | `GET` | `/api/gpu-env` | Get GPU environment config |
 | `PUT` | `/api/gpu-env` | Save GPU environment config |
-| `POST` | `/api/chat?port=` | Streaming proxy to `/v1/chat/completions` |
+| `ANY` | `/v1/*` | Transparent proxy to the running llama-server's OpenAI-compatible API |
+| `GET` | `/api/app/update/check` | Running version/track and the latest stable and beta releases |
+| `POST` | `/api/app/update/apply` | Install `{"track": "main"\|"beta"}` and restart; progress arrives via the WebSocket |
 
 ## Architecture
 
@@ -235,7 +268,8 @@ src/
     poller.rs          -- Async polling loop for /health, /metrics, /slots
     bench.rs           -- llama-bench sweep runner with cancellation
   system/
-    mod.rs             -- Host CPU / memory / disk sampler (/proc, df)
+    mod.rs             -- Host CPU / memory / disk sampler (/proc, df, dmidecode)
+  update.rs            -- Release-track updater: GitHub Releases, verify, swap, re-exec
   presets/
     mod.rs             -- ModelPreset, CRUD, file persistence
   models/
@@ -280,6 +314,19 @@ cargo fmt                    # Format
 ```
 
 Frontend files in `static/` are embedded at compile time via `include_str!` — no Node.js or build tooling required. Rebuild after changing them.
+
+CI (`cargo fmt --check`, `clippy -D warnings`, tests, release build) runs on pushes to `main` and `beta`.
+
+### Releasing
+
+Bump `version` in `Cargo.toml`, add a CHANGELOG entry, then tag:
+
+```bash
+git tag v2026.9.21-beta.1 && git push origin v2026.9.21-beta.1   # beta track (pre-release)
+git tag v2026.9.21 && git push origin v2026.9.21                 # main track (stable)
+```
+
+The release workflow builds all four targets, writes `SHA256SUMS`, and marks tags containing `-beta` as pre-releases. Versions are CalVer `YYYY.M.D`; use a `-beta.N` suffix for betas.
 
 ## Credits and licence
 

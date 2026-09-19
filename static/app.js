@@ -434,6 +434,16 @@ async function toggleBenchmark() {
 
     const ngl = parseInt(document.getElementById('bench-ngl').value) || 999;
 
+    // Every field multiplies the sweep; make the size explicit before a long run.
+    const runs = splits.length * Math.max(1, batchSizes.length) * Math.max(1, ubatchSizes.length) * Math.max(1, threads.length);
+    if (runs > 6) {
+        const proceed = await showConfirm('Run ' + runs + ' benchmarks?',
+            'This sweep is ' + splits.length + ' split' + (splits.length === 1 ? '' : 's') +
+            ' × ' + Math.max(1, batchSizes.length) + ' batch × ' + Math.max(1, ubatchSizes.length) + ' micro-batch × ' + Math.max(1, threads.length) + ' thread settings = ' + runs +
+            ' llama-bench runs, each loading the model from scratch. Expect several minutes per run for large models.', 'Start ' + runs + ' runs');
+        if (!proceed) return;
+    }
+
     try {
         const payload = { model_path: modelPath, splits: splits, gpu_layers: ngl };
         if (batchSizes.length > 0) payload.batch_sizes = batchSizes;
@@ -465,7 +475,7 @@ async function applyBenchResult(split, batch, ubatch, threads) {
         return;
     }
     const proceed = await showConfirm('Apply benchmark result',
-        'Set split to "' + split + '", batch to ' + batch + ', and threads to ' + threads + ' on preset "' + p.name + '"?');
+        'Set tensor split "' + split + '", batch ' + batch + ', micro-batch ' + ubatch + ' and ' + threads + ' threads on preset "' + p.name + '"?');
     if (!proceed) return;
 
     const updated = Object.assign({}, p, { 
