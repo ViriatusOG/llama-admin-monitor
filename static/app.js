@@ -3380,8 +3380,15 @@ function createPiTerminal() {
     // xterm measures its cell size lazily, so the first fit can be a no-op;
     // watch the container and re-fit whenever it has a real size.
     if (window.ResizeObserver) {
-        new ResizeObserver(() => piResize()).observe(document.getElementById('pi-terminal-wrap'));
+        const ro = new ResizeObserver(() => piResize());
+        ro.observe(document.getElementById('pi-terminal-wrap'));
+        // xterm re-measures its cells when the webfont finishes loading,
+        // which shrinks the rendered screen without the container moving;
+        // watching the screen element catches that and any other re-layout.
+        const screen = host.querySelector('.xterm-screen');
+        if (screen) ro.observe(screen);
     }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => setTimeout(piResize, 50));
     document.getElementById('pi-terminal-empty').hidden = true;
     piResize();
     setTimeout(piResize, 100);

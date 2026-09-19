@@ -7,6 +7,9 @@ and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+### Fixed
+- The Pi terminal was capped at 24 rows regardless of the window: xterm.js gives its root element the class `terminal`, which collided with the Process Output panel's `.terminal` rule (`max-height: 360px`). The panel's class is now `log-terminal`, and the terminal follows the browser window size (re-fitting on resize, font load and page switch).
+
 ### Added
 - **Pi page** (sidebar → Interact → Pi): the [pi](https://pi.dev) coding agent running in a terminal on the server, embedded in the dashboard (xterm.js over a WebSocket-attached PTY). Pick a working directory, Start, and pi is launched with a `llama-admin-monitor` provider that the monitor writes into `~/.pi/agent/models.json`, pointing at the monitor's `/v1` proxy; every preset is listed as a model and pi starts on the loaded model (or the active preset). The session survives page changes and reloads (scrollback is replayed on reattach); Stop kills it. If pi is missing, **Install pi** runs pi's own installer in the same terminal. `POST /api/pi/start|stop|install`, `GET /api/pi/status`, `/ws/pi`.
 

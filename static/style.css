@@ -299,12 +299,14 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 .progress-fill.progress-fill-critical { background: var(--red); }
 @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 
-.terminal {
+/* Process Output. (Not ".terminal": xterm.js puts that class on its own
+   root element and would inherit the max-height.) */
+.log-terminal {
     background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
     padding: var(--space-4); font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--green);
     min-height: 160px; max-height: 360px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
 }
-.terminal:empty::before { content: 'No output yet — start the server to see llama-server logs here.'; color: var(--fg-faint); font-style: italic; font-family: var(--font); }
+.log-terminal:empty::before { content: 'No output yet — start the server to see llama-server logs here.'; color: var(--fg-faint); font-style: italic; font-family: var(--font); }
 
 /* ════════════════════════════════════════════
    MONITOR
@@ -773,7 +775,7 @@ details.monitor-output-card:not([open]) > summary .details-chevron {
 .pi-buttons { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .pi-terminal-wrap { position: relative; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: #0b0d14; min-height: 420px; height: calc(100vh - 340px); overflow: hidden; }
 .pi-terminal { position: absolute; inset: 8px; }
+.pi-terminal .xterm { position: absolute; inset: 0; }
 .pi-terminal-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: var(--space-4); text-align: center; }
 .pi-terminal-empty[hidden] { display: none; }
-.pi-terminal .xterm { height: 100%; }
 .pi-terminal .xterm-viewport { border-radius: var(--radius-sm); }
