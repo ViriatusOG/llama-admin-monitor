@@ -63,7 +63,7 @@ pub fn parse_nvidia_csv(csv: &str) -> Result<BTreeMap<String, GpuMetrics>> {
         let mclk_mhz = fields[9].parse::<u32>().unwrap_or(0);
         let bus = fields
             .get(10)
-            .map(super::procs::normalize_bus)
+            .map(|b| super::procs::normalize_bus(b))
             .filter(|b| !b.is_empty());
 
         let card_name = unique_card_key(&metrics, name);
