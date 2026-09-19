@@ -412,6 +412,37 @@ fn api_browse() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Reje
         })
 }
 
+/// Headers that describe one hop of a connection rather than the message.
+/// Forwarding them from the upstream reply would let hyper re-frame a body
+/// that already carries a length or chunking declaration.
+const HOP_BY_HOP: [&str; 9] = [
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+];
+
+pub fn is_hop_by_hop(name: &str) -> bool {
+    HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(name)) || name.eq_ignore_ascii_case("host")
+}
+
+/// One pooled client for every proxied request; building a client per
+/// request throws away its connection pool.
+fn proxy_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("reqwest client")
+    })
+}
+
 pub fn api_v1_proxy(
     state: AppState,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -447,11 +478,12 @@ pub fn api_v1_proxy(
 
                     let reqwest_method =
                         reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap();
-                    let client = reqwest::Client::new();
-                    let mut req = client.request(reqwest_method, &url).body(body.to_vec());
+                    let mut req = proxy_client()
+                        .request(reqwest_method, &url)
+                        .body(body.to_vec());
 
                     for (k, v) in headers.iter() {
-                        if k.as_str().to_lowercase() != "host" {
+                        if !is_hop_by_hop(k.as_str()) {
                             req = req.header(k.as_str(), v.as_bytes());
                         }
                     }
@@ -462,7 +494,9 @@ pub fn api_v1_proxy(
                             let mut builder = warp::http::Response::builder().status(status);
 
                             for (k, v) in resp.headers().iter() {
-                                builder = builder.header(k.as_str(), v.as_bytes());
+                                if !is_hop_by_hop(k.as_str()) {
+                                    builder = builder.header(k.as_str(), v.as_bytes());
+                                }
                             }
 
                             let stream = resp.bytes_stream();
@@ -830,4 +864,19 @@ fn api_app_update_apply(
             });
             Ok(warp::reply::json(&serde_json::json!({"ok": true})))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hop_by_hop_headers_are_stripped_case_insensitively() {
+        for h in ["Transfer-Encoding", "content-length", "Connection", "Host", "keep-alive"] {
+            assert!(is_hop_by_hop(h), "{h}");
+        }
+        for h in ["Content-Type", "authorization", "x-request-id", "cache-control"] {
+            assert!(!is_hop_by_hop(h), "{h}");
+        }
+    }
 }
