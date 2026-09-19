@@ -2367,13 +2367,13 @@ function releaseLabel(r) {
     return r.tag + when;
 }
 
-async function checkAppUpdates() {
+async function checkAppUpdates(force = false) {
     const note = document.getElementById('updates-note');
     note.hidden = true;
     document.getElementById('updates-available-row').hidden = true;
     document.getElementById('updates-switch-row').hidden = true;
     try {
-        const res = await fetch('/api/app/update/check');
+        const res = await fetch('/api/app/update/check' + (force ? '?force=1' : ''));
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         updateStatus = data;

@@ -13,11 +13,19 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::state::AppState;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const REPO: &str = "ViriatusOG/llama-admin-monitor";
 const USER_AGENT: &str = "llama-admin-monitor";
 /// Anything smaller than this is an error page, not a build of this app.
 const MIN_BINARY_BYTES: u64 = 1_000_000;
+/// How long a successful release listing is reused. Unauthenticated GitHub
+/// API calls are limited to 60 per hour per address, and every page load
+/// asks; without this a busy afternoon of reloads hits the limit.
+const CHECK_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+
+static CHECK_CACHE: Mutex<Option<(Instant, UpdateStatus)>> = Mutex::new(None);
 
 /// Release track this binary was built for: "main", "beta", or "dev" for a
 /// local `cargo build` (which never offers updates to itself).
@@ -92,11 +100,55 @@ struct GhRelease {
 }
 
 fn client() -> Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    // Optional: raises the API limit from 60 to 5000 requests per hour.
+    if let Ok(token) = std::env::var("LLAMA_ADMIN_GITHUB_TOKEN")
+        && !token.trim().is_empty()
+        && let Ok(value) = format!("Bearer {}", token.trim()).parse()
+    {
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(600))
+        .default_headers(headers)
+        .timeout(Duration::from_secs(600))
         .build()
         .context("cannot build HTTP client")
+}
+
+/// Turns GitHub's 403/429 replies into a message that says when to retry.
+fn rate_limit_message(resp: &reqwest::Response) -> Option<String> {
+    let status = resp.status().as_u16();
+    if status != 403 && status != 429 {
+        return None;
+    }
+    let remaining = resp
+        .headers()
+        .get("x-ratelimit-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    if remaining.is_some_and(|r| r > 0) && status == 403 {
+        return None;
+    }
+    let reset = resp
+        .headers()
+        .get("x-ratelimit-reset")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(|epoch| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            epoch.saturating_sub(now) / 60 + 1
+        });
+    Some(match reset {
+        Some(mins) => format!(
+            "GitHub API rate limit reached (60 unauthenticated requests per hour); \
+             try again in about {mins} min, or set LLAMA_ADMIN_GITHUB_TOKEN"
+        ),
+        None => "GitHub API rate limit reached; try again later".to_string(),
+    })
 }
 
 async fn fetch_releases(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
@@ -105,7 +157,11 @@ async fn fetch_releases(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
         .get(&url)
         .send()
         .await
-        .context("GitHub API request failed")?
+        .context("GitHub API request failed")?;
+    if let Some(msg) = rate_limit_message(&resp) {
+        bail!("{msg}");
+    }
+    let resp = resp
         .error_for_status()
         .context("GitHub API returned an error")?;
     let bytes = resp
@@ -149,7 +205,21 @@ fn latest_per_track(
     (stable, beta)
 }
 
-pub async fn check_updates() -> Result<UpdateStatus> {
+/// Lists releases, reusing a recent answer (see CHECK_CACHE_TTL). `force`
+/// skips the cache for an explicit "Check for updates" click.
+pub async fn check_updates(force: bool) -> Result<UpdateStatus> {
+    if !force
+        && let Some((at, status)) = CHECK_CACHE.lock().unwrap().as_ref()
+        && at.elapsed() < CHECK_CACHE_TTL
+    {
+        return Ok(status.clone());
+    }
+    let status = check_updates_uncached().await?;
+    *CHECK_CACHE.lock().unwrap() = Some((Instant::now(), status.clone()));
+    Ok(status)
+}
+
+async fn check_updates_uncached() -> Result<UpdateStatus> {
     let client = client()?;
     let releases = fetch_releases(&client).await?;
     let asset = platform_asset();

@@ -83,11 +83,19 @@ pub async fn start_server(
         anyhow::bail!("Multimodal projector not found: {}", config.mmproj);
     }
 
-    // Validate server binary (skip PATH lookup for bare names like "llama-server")
+    // Validate the server binary: a path must exist, a bare name must be on PATH.
     let server_path = &app_config.llama_server_path;
-    if server_path.components().count() > 1 && !server_path.exists() {
+    if server_path.components().count() > 1 {
+        if !server_path.exists() {
+            anyhow::bail!(
+                "llama-server binary not found: {}. Set it in Settings.",
+                server_path.display()
+            );
+        }
+    } else if find_on_path(server_path).is_none() {
         anyhow::bail!(
-            "llama-server binary not found: {}. Set it in Configuration.",
+            "`{}` is not on PATH. Set the full path to llama-server in Settings \
+             (sidebar) or pass --llama-server-path.",
             server_path.display()
         );
     }
@@ -343,6 +351,14 @@ pub async fn start_server(
     state.llama_poll_notify.notify_one();
 
     Ok(())
+}
+
+/// Resolves a bare executable name against PATH, like a shell would.
+pub fn find_on_path(name: &std::path::Path) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
 }
 
 pub async fn stop_server(state: &AppState) -> Result<()> {

@@ -12,6 +12,11 @@ Backwards compatibility is preserved unless explicitly noted.
 - Update notifications: release builds check GitHub on load and every six hours, show an "Update" pill beside the version in the sidebar and a one-time toast per new release with an "Open updates" button that jumps to Settings > App Updates.
 
 ### Fixed
+- Starting on a port that is already in use reports a clear message (and how to free it) instead of a warp panic.
+- The Settings dialog shows the llama-server path, working directory and models directory actually in effect, including values passed on the command line, instead of empty placeholders.
+- A bare `llama-server` name that is not on PATH is reported as such at launch instead of "No such file or directory".
+- Update checks are cached for 15 minutes server-side (page loads no longer each cost a GitHub API call), GitHub's rate limit is explained with a retry time, and `LLAMA_ADMIN_GITHUB_TOKEN` can raise the limit. "Check for updates" always fetches fresh.
+- Rows hidden with the `hidden` attribute could still render when a class set `display`; `[hidden]` now always wins.
 - Static assets are served with `Cache-Control: no-cache` and versioned URLs, so a browser can no longer pair a freshly updated binary with a cached script from the previous build (which made the Settings dialog misbehave after an update).
 
 ### Changed

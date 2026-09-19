@@ -129,8 +129,18 @@ async fn main() -> Result<()> {
     let port = app_config.port;
     let routes = web::build_routes(state, app_config);
 
-    println!("[info] Llama Admin Monitor running on http://0.0.0.0:{port}");
-    warp::serve(routes).run(([0, 0, 0, 0], port)).await;
+    // Bind before announcing, so a port clash is a clear message rather
+    // than a panic from inside warp.
+    let (addr, server) = warp::serve(routes)
+        .try_bind_ephemeral(([0, 0, 0, 0], port))
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "cannot listen on port {port}: {e}. Is another llama-admin-monitor already \
+                 running? Stop it (e.g. `pkill -f llama-admin-monitor`) or pass --port."
+            )
+        })?;
+    println!("[info] Llama Admin Monitor running on http://{addr}");
+    server.await;
 
     Ok(())
 }

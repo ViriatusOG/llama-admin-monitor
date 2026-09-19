@@ -17,7 +17,7 @@ pub fn api_routes(
     app_config: Arc<AppConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let app_config_bench = app_config.clone();
-    let start = api_start(state.clone(), app_config);
+    let start = api_start(state.clone(), app_config.clone());
     let stop = api_stop(state.clone());
     let get_presets = api_get_presets(state.clone());
     let create_preset = api_create_preset(state.clone());
@@ -30,7 +30,7 @@ pub fn api_routes(
     let bench_run = api_bench_run(state.clone(), app_config_bench);
     let get_gpu_env = api_get_gpu_env(state.clone());
     let put_gpu_env = api_put_gpu_env(state.clone());
-    let get_settings = api_get_settings(state.clone());
+    let get_settings = api_get_settings(state.clone(), app_config.clone());
     let put_settings = api_put_settings(state.clone());
     let browse = api_browse();
     let hf_search = api_hf_search();
@@ -258,11 +258,25 @@ fn api_put_gpu_env(
 
 fn api_get_settings(
     state: AppState,
+    app_config: Arc<AppConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "settings")
         .and(warp::get())
         .map(move || {
-            let settings = state.ui_settings.lock().unwrap().clone();
+            // Empty UI fields mean "use the CLI value"; report that value so
+            // the Settings dialog shows what is actually in effect.
+            let mut settings = state.ui_settings.lock().unwrap().clone();
+            if settings.llama_server_path.is_empty() {
+                settings.llama_server_path = app_config.llama_server_path.display().to_string();
+            }
+            if settings.llama_server_cwd.is_empty() {
+                settings.llama_server_cwd = app_config.llama_server_cwd.display().to_string();
+            }
+            if settings.models_dir.is_empty()
+                && let Some(dir) = &app_config.models_dir
+            {
+                settings.models_dir = dir.display().to_string();
+            }
             warp::reply::json(&settings)
         })
 }
@@ -824,8 +838,10 @@ fn api_app_update_check()
 -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "app" / "update" / "check")
         .and(warp::get())
-        .and_then(|| async {
-            let reply = match update::check_updates().await {
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and_then(|q: std::collections::HashMap<String, String>| async move {
+            let force = q.get("force").is_some_and(|v| v == "1" || v == "true");
+            let reply = match update::check_updates(force).await {
                 Ok(status) => warp::reply::json(&status),
                 Err(e) => warp::reply::json(&serde_json::json!({"error": format!("{e:#}")})),
             };
