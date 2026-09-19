@@ -286,7 +286,10 @@ pub fn parse_smartctl_json(text: &str) -> Option<SmartData> {
             .filter(|&x| x != 0)
             .map(|x| x as u32);
     }
-    if let Some(table) = v.pointer("/ata_smart_attributes/table").and_then(|t| t.as_array()) {
+    if let Some(table) = v
+        .pointer("/ata_smart_attributes/table")
+        .and_then(|t| t.as_array())
+    {
         for attr in table {
             let id = attr.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
             let raw = attr.pointer("/raw/value").and_then(|r| r.as_u64());
