@@ -120,9 +120,9 @@ pub fn find_pi() -> Option<PathBuf> {
 fn login_shell_lookup(name: &str) -> Option<PathBuf> {
     use std::sync::OnceLock;
     use std::time::{Duration, Instant};
-    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, (Instant, Option<PathBuf>)>>> =
-        OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    type Lookups = std::collections::HashMap<String, (Instant, Option<PathBuf>)>;
+    static CACHE: OnceLock<Mutex<Lookups>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(Lookups::new()));
     if let Some((at, hit)) = cache.lock().unwrap().get(name)
         && at.elapsed() < Duration::from_secs(60)
     {
