@@ -7,6 +7,8 @@ and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+
+## [1.1.1] - 2026-09-19
 ### Changed
 - Pi's model list is now one entry per **preset**, named after the preset (previously entries were per model file, so presets sharing a file collapsed into one and showed the file name). pi starts on the active preset.
 
