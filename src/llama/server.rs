@@ -707,7 +707,10 @@ mod tests {
             "0.00.759.180 E srv  llama_server: exiting due to model loading error".to_string(),
         ];
         let d = diagnose_exit(&recent).unwrap();
-        assert!(d.starts_with("llama_model_load: error loading model"), "{d}");
+        assert!(
+            d.starts_with("llama_model_load: error loading model"),
+            "{d}"
+        );
         assert!(d.contains("Split mode to 'layer'"), "{d}");
     }
 
