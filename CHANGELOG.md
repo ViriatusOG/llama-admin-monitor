@@ -22,6 +22,7 @@ Backwards compatibility is preserved unless explicitly noted.
 - The GPU Memory Pool card is the same size as the GPU cards and lists every device's used/total VRAM under the pooled bar, in the vendor colours of the legend; the total moved from the header badge to a "Used" row.
 
 ### Fixed
+- The preset editor's Build choice was dropped on save (the field was missing from the preset model on the server), so every preset silently launched the configured binary. It is now stored with the preset.
 - Update checks compared release versions by GitHub's listing order, which sorts by tag name — so `beta.9` outranked `beta.12` and a fresh install was offered a downgrade. Versions are now parsed (`YYYY.M.D[-beta.N]`) and compared numerically; an update is only offered when the release is actually newer.
 - The GPU environment section in Settings (rocminfo detection) resolves generic "AMD Radeon Graphics" names from the chip id the same way the monitor cards do.
 - Settings → App Updates on a local cargo build now offers "Install" buttons for the latest stable and beta releases instead of a dead end; installing replaces the local binary with the GitHub build and enables normal update checks from then on.

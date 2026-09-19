@@ -28,6 +28,11 @@ pub struct ModelPreset {
     #[serde(default)]
     pub flash_attn: String,
     // GPU distribution
+    /// Which llama-server build to launch: "" / "vulkan" for the configured
+    /// binary, "cuda" for the legacy build-cuda tree, or "build:<id>" for
+    /// a build from the Install page.
+    #[serde(default)]
+    pub backend: String,
     /// Comma-separated ggml device names to offload to (`--device`), e.g.
     /// `Vulkan1`; empty means every device.
     #[serde(default)]
@@ -116,6 +121,7 @@ pub fn default_presets() -> Vec<ModelPreset> {
             name: "Example: Small Model 128K context".into(),
             model_path: String::new(),
             mmproj: String::new(),
+            backend: String::new(),
             devices: String::new(),
             context_size: 128000,
             ctk: "f16".into(),
@@ -149,6 +155,7 @@ pub fn default_presets() -> Vec<ModelPreset> {
             name: "Example: Medium Model 256K turbo3 + ngram".into(),
             model_path: String::new(),
             mmproj: String::new(),
+            backend: String::new(),
             devices: String::new(),
             context_size: 256000,
             ctk: "turbo3".into(),
@@ -182,6 +189,7 @@ pub fn default_presets() -> Vec<ModelPreset> {
             name: "Example: Large Model 512K YaRN multi-GPU".into(),
             model_path: String::new(),
             mmproj: String::new(),
+            backend: String::new(),
             devices: String::new(),
             context_size: 524288,
             ctk: "turbo3".into(),
@@ -215,6 +223,7 @@ pub fn default_presets() -> Vec<ModelPreset> {
             name: "Example: Max Context 1M YaRN".into(),
             model_path: String::new(),
             mmproj: String::new(),
+            backend: String::new(),
             devices: String::new(),
             context_size: 1048576,
             ctk: "turbo3".into(),
