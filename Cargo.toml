@@ -1,6 +1,6 @@
 [package]
 name = "llama-admin-monitor"
-version = "2026.9.20"
+version = "2026.9.22"
 edition = "2024"
 
 [dependencies]
