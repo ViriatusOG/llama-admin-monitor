@@ -6,8 +6,8 @@ mod models;
 mod presets;
 mod state;
 mod system;
-mod web;
 mod update;
+mod web;
 
 use anyhow::Result;
 use clap::Parser;

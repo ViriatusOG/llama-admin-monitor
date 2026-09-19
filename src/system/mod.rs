@@ -282,7 +282,9 @@ pub fn parse_dmidecode_memory(text: &str) -> (u32, Vec<DimmInfo>) {
             continue;
         }
         let Some(d) = current.as_mut() else { continue };
-        let Some((key, value)) = line.trim().split_once(':') else { continue };
+        let Some((key, value)) = line.trim().split_once(':') else {
+            continue;
+        };
         let value = value.trim();
         match key.trim() {
             "Size" => {
@@ -519,7 +521,10 @@ mod tests {
     #[test]
     fn cpu_model_name() {
         let text = "processor\t: 0\nmodel name\t: AMD Ryzen 9 7950X 16-Core Processor\n";
-        assert_eq!(parse_cpu_model(text).as_deref(), Some("AMD Ryzen 9 7950X 16-Core Processor"));
+        assert_eq!(
+            parse_cpu_model(text).as_deref(),
+            Some("AMD Ryzen 9 7950X 16-Core Processor")
+        );
         assert_eq!(parse_cpu_model("flags: fpu"), None);
     }
 

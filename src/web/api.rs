@@ -418,7 +418,11 @@ pub fn api_v1_proxy(
     warp::path("v1")
         .and(warp::path::tail())
         .and(warp::method())
-        .and(warp::query::raw().map(Some).or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) }))
+        .and(
+            warp::query::raw()
+                .map(Some)
+                .or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) }),
+        )
         .and(warp::header::headers_cloned())
         .and(warp::body::bytes())
         .and_then(
@@ -433,7 +437,7 @@ pub fn api_v1_proxy(
                         let cfg = state.server_config.lock().unwrap();
                         cfg.as_ref().map(|c| c.port).unwrap_or(8080)
                     };
-                    
+
                     let path = tail.as_str();
                     let url = if let Some(q) = query {
                         format!("http://127.0.0.1:{}/v1/{}?{}", port, path, q)
@@ -441,10 +445,11 @@ pub fn api_v1_proxy(
                         format!("http://127.0.0.1:{}/v1/{}", port, path)
                     };
 
-                    let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap();
+                    let reqwest_method =
+                        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap();
                     let client = reqwest::Client::new();
                     let mut req = client.request(reqwest_method, &url).body(body.to_vec());
-                    
+
                     for (k, v) in headers.iter() {
                         if k.as_str().to_lowercase() != "host" {
                             req = req.header(k.as_str(), v.as_bytes());
@@ -455,11 +460,11 @@ pub fn api_v1_proxy(
                         Ok(resp) => {
                             let status = resp.status().as_u16();
                             let mut builder = warp::http::Response::builder().status(status);
-                            
+
                             for (k, v) in resp.headers().iter() {
                                 builder = builder.header(k.as_str(), v.as_bytes());
                             }
-                            
+
                             let stream = resp.bytes_stream();
                             let body_stream = warp::hyper::Body::wrap_stream(stream);
                             Ok::<_, warp::Rejection>(builder.body(body_stream).unwrap())
@@ -757,15 +762,16 @@ fn api_bench_run(
                 let progress = state.bench_progress.clone();
                 tokio::spawn(async move {
                     bench::run_benchmark_sweep(
-                        bench_bin, 
-                        model_path, 
-                        splits, 
-                        batch_sizes, 
-                        ubatch_sizes, 
-                        thread_counts, 
-                        gpu_layers, 
-                        progress
-                    ).await;
+                        bench_bin,
+                        model_path,
+                        splits,
+                        batch_sizes,
+                        ubatch_sizes,
+                        thread_counts,
+                        gpu_layers,
+                        progress,
+                    )
+                    .await;
                 });
 
                 warp::reply::json(&serde_json::json!({"ok": true}))
@@ -773,21 +779,26 @@ fn api_bench_run(
         )
 }
 
-fn api_app_update_check() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+fn api_app_update_check()
+-> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "app" / "update" / "check")
         .and(warp::get())
-        .map(|| {
-            match update::check_updates() {
-                Ok(status) => warp::reply::with_status(warp::reply::json(&status), warp::http::StatusCode::OK),
-                Err(e) => {
-                    let err = serde_json::json!({"error": e.to_string()});
-                    warp::reply::with_status(warp::reply::json(&err), warp::http::StatusCode::INTERNAL_SERVER_ERROR)
-                }
+        .map(|| match update::check_updates() {
+            Ok(status) => {
+                warp::reply::with_status(warp::reply::json(&status), warp::http::StatusCode::OK)
+            }
+            Err(e) => {
+                let err = serde_json::json!({"error": e.to_string()});
+                warp::reply::with_status(
+                    warp::reply::json(&err),
+                    warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
             }
         })
 }
 
-fn api_app_update_apply() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+fn api_app_update_apply()
+-> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("api" / "app" / "update" / "apply")
         .and(warp::post())
         .and(warp::body::json())
@@ -797,13 +808,13 @@ fn api_app_update_apply() -> impl Filter<Extract = (impl warp::Reply,), Error = 
                     update::apply_update(branch.to_string());
                     return warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"ok": true})),
-                        warp::http::StatusCode::OK
+                        warp::http::StatusCode::OK,
                     );
                 }
             }
             warp::reply::with_status(
                 warp::reply::json(&serde_json::json!({"ok": false, "error": "Invalid branch"})),
-                warp::http::StatusCode::BAD_REQUEST
+                warp::http::StatusCode::BAD_REQUEST,
             )
         })
 }

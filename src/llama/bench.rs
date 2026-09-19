@@ -142,7 +142,17 @@ pub async fn run_benchmark_sweep(
                         p.current_threads = threads;
                     }
 
-                    match run_one(&bench_bin, &model_path, split, gpu_layers, batch_size, ubatch_size, threads).await {
+                    match run_one(
+                        &bench_bin,
+                        &model_path,
+                        split,
+                        gpu_layers,
+                        batch_size,
+                        ubatch_size,
+                        threads,
+                    )
+                    .await
+                    {
                         Ok((prompt_tps, gen_tps)) => {
                             let mut p = progress.lock().unwrap();
                             p.results.push(BenchResult {
@@ -192,13 +202,12 @@ mod tests {
         // When given a full path
         let p = bench_binary_path("/opt/llama.cpp/llama-server");
         assert_eq!(p.to_string_lossy(), "/opt/llama.cpp/llama-bench");
-        
+
         // When given a relative path
         let p = bench_binary_path("./llama-server");
         assert_eq!(p.to_string_lossy(), "./llama-bench");
-        
-        // When given a bare filename, parent() is Some(""), not None.
-        // Wait, PathBuf::from("llama-server").parent() is Some("").
+
+        // A bare name resolves next to it: parent() is Some(""), not None.
         let p = bench_binary_path("llama-server");
         assert_eq!(p.to_string_lossy(), "llama-bench");
     }
