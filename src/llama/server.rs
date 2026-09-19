@@ -425,7 +425,7 @@ pub fn diagnose_exit(recent: &[String]) -> Option<String> {
         out.push_str("...");
     }
     if let Some(h) = hint {
-        out.push_str(" \u2014 ");
+        out.push_str(" \u{2014} ");
         out.push_str(h);
     }
     Some(out)
@@ -435,7 +435,8 @@ pub fn diagnose_exit(recent: &[String]) -> Option<String> {
 fn strip_log_prefix(line: &str) -> String {
     let mut parts = line.split_whitespace();
     let first = parts.next().unwrap_or("");
-    let looks_timestamped = first.chars().all(|c| c.is_ascii_digit() || c == '.') && first.contains('.');
+    let looks_timestamped =
+        first.chars().all(|c| c.is_ascii_digit() || c == '.') && first.contains('.');
     if !looks_timestamped {
         return line.trim().to_string();
     }
@@ -665,7 +666,10 @@ mod tests {
             "0.03.046.561 E srv  llama_server: exiting due to model loading error".to_string(),
         ];
         let d = diagnose_exit(&recent).unwrap();
-        assert!(d.starts_with("ggml_vulkan: Device memory allocation of size 811008000 failed."), "{d}");
+        assert!(
+            d.starts_with("ggml_vulkan: Device memory allocation of size 811008000 failed."),
+            "{d}"
+        );
         assert!(d.contains("does not fit"), "{d}");
     }
 
