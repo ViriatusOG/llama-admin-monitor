@@ -324,7 +324,12 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 
 .monitor-metrics-grid { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--space-4); }
 .monitor-metrics-grid > .card { flex: 1 1 300px; min-width: 0; }
-.monitor-metrics-grid > .monitor-system-card, .monitor-metrics-grid > .monitor-gpu-card, .monitor-metrics-grid > .monitor-vram-card, .monitor-metrics-grid > .monitor-inference-card { flex: 1 1 260px; max-width: 380px; }
+/* 320px is the narrowest a card can be without its readings wrapping;
+   on wide screens that means fewer, wider cards per row rather than seven
+   squeezed ones. */
+.monitor-metrics-grid > .monitor-system-card, .monitor-metrics-grid > .monitor-gpu-card, .monitor-metrics-grid > .monitor-vram-card, .monitor-metrics-grid > .monitor-inference-card { flex: 1 1 320px; max-width: 420px; }
+.monitor-metrics-grid .monitor-metric-row .monitor-metric-reading { white-space: nowrap; }
+.monitor-metrics-grid .monitor-metric-row .monitor-metric-label { min-width: 0; }
 /* Monitor cards keep their tools on the title line; a long device name
    wraps inside its own column instead of pushing the tools down. */
 .monitor-metrics-grid > .card > .card-header { flex-wrap: nowrap; }
