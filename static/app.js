@@ -2818,17 +2818,30 @@ function renderInstalledBuilds() {
         host.innerHTML = '<div class="empty-state"><div class="empty-state-title">No builds installed yet</div><p>Install one below, or keep using the binary configured in Settings.</p></div>';
         return;
     }
+    const latest = installCatalog && installCatalog.releases && installCatalog.releases[0] ? installCatalog.releases[0].tag : '';
+    const tagNum = t => parseInt(String(t || '').replace(/^b/, ''), 10) || 0;
+    const stale = installedBuilds.filter(b => tagNum(latest) > tagNum(b.tag)).length;
+    const summary = document.getElementById('builds-update-summary');
+    if (summary) {
+        summary.textContent = latest
+            ? (stale ? stale + ' of ' + installedBuilds.length + ' build(s) behind the newest release, ' + latest : 'All builds are on the newest release, ' + latest)
+            : '';
+    }
     host.innerHTML = installedBuilds.map(b => {
+        const behind = tagNum(latest) > tagNum(b.tag);
+        const updateBtn = behind
+            ? '<button class="btn btn-sm btn-primary" type="button" onclick="updateBuild(\'' + jsStr(b.id) + '\', \'' + jsStr(latest) + '\')" title="Install ' + escapeHtml(latest) + ' for this backend, move presets and Settings to it, and remove ' + escapeHtml(b.tag) + '">Update to ' + escapeHtml(latest) + '</button>'
+            : '';
         const devices = b.devices && b.devices.length
             ? b.devices.map(d => '<span class="preset-chip" title="' + escapeHtml(d.name) + '">' + escapeHtml(d.id) + ' \u00b7 ' + escapeHtml(d.name) + '</span>').join('')
             : '<span class="preset-chip" title="' + escapeHtml(b.device_check_error || '') + '">' + (b.device_check_error ? 'device check failed' : 'no GPU devices') + '</span>';
         return '<div class="build-row">' +
             '<div class="build-row-main">' +
-                '<div class="build-row-title">' + escapeHtml(buildLabel(b)) + '<span class="badge badge-neutral mono">build:' + escapeHtml(b.id) + '</span></div>' +
+                '<div class="build-row-title">' + escapeHtml(buildLabel(b)) + '<span class="badge badge-neutral mono">build:' + escapeHtml(b.id) + '</span>' + (behind ? '<span class="badge badge-accent">' + escapeHtml(latest) + ' available</span>' : '<span class="badge badge-green">up to date</span>') + '</div>' +
                 '<div class="build-row-path" title="' + escapeHtml(b.server_path) + '">' + escapeHtml(b.server_path) + '</div>' +
                 '<div class="build-row-devices">' + devices + '</div>' +
             '</div>' +
-            '<div class="build-row-actions">' +
+            '<div class="build-row-actions">' + updateBtn +
                 '<button class="btn btn-sm" type="button" onclick="useBuildInSettings(\'' + jsStr(b.id) + '\')" title="Point Settings at this build so presets on Configured binary use it">Use in Settings</button>' +
                 '<button class="btn btn-sm btn-ghost preset-delete" type="button" onclick="removeBuild(\'' + jsStr(b.id) + '\')">Remove</button>' +
             '</div></div>';
@@ -2915,8 +2928,23 @@ function renderInstallProgress(p) {
         lastInstallKey = key;
         box.hidden = true;
         if (p.error) showToast('Install of ' + p.id + ' failed: ' + p.error, 'error', { label: 'Open Install', onClick: () => switchTab('install') });
-        else showToast('Installed ' + p.id, 'success', { label: 'Open Install', onClick: () => switchTab('install') });
+        else showToast(p.phase || ('Installed ' + p.id), 'success', { label: 'Open Install', onClick: () => switchTab('install') });
         refreshInstalledBuilds();
+        loadPresets(document.getElementById('preset-select').value || undefined);
+    }
+}
+
+async function updateBuild(id, latest) {
+    const proceed = await showConfirm('Update ' + id,
+        'Install llama.cpp ' + latest + ' for this backend, switch presets and Settings that use ' + id + ' over to it, then remove the old build?', 'Update');
+    if (!proceed) return;
+    try {
+        const res = await fetch('/api/builds/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+        showToast('Updating ' + id + ' to ' + latest + '\u2026', 'success');
+    } catch (err) {
+        showToast('Update failed to start: ' + err.message, 'error');
     }
 }
 

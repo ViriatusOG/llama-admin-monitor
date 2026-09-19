@@ -14,6 +14,9 @@ Backwards compatibility is preserved unless explicitly noted.
 ### Added (GPU cards)
 - AMD GPU cards show all three temperature sensors rocm-smi reports: **Hotspot** (junction, the headline value and what the card throttles on), **Edge** and **Memory**. Hotspot and memory use looser warning thresholds (95/105 C) than edge and NVIDIA's single sensor (80/90 C), matching what those sensors normally run at.
 
+### Added
+- Install page: each installed llama.cpp build shows whether it is on the newest upstream release ("up to date" / "bNNNNN available") with an **Update to bNNNNN** button. Updating installs the new tag for the same backend, moves presets and Settings that used the old build over to it, and removes the old one; a summary line above the list says how many builds are behind. (`POST /api/builds/update {id}`)
+
 ### Changed
 - Monitor cards keep their drag grip, Hide and icon on the title line; a long device name wraps inside its own column instead of pushing the tools down. GPU card titles drop the vendor prefix the kicker already shows ("Radeon AI PRO R9700" under "GPU 0 · AMD"; the full name is in the tooltip).
 - The GPU Memory Pool card is the same size as the GPU cards and lists every device's used/total VRAM under the pooled bar, in the vendor colours of the legend; the total moved from the header badge to a "Used" row.

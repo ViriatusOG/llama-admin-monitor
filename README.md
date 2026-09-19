@@ -41,7 +41,7 @@ Same dashboard in the **Mint** light theme:
 - **Failure detection** — if llama-server exits on its own (a model that won't fit, a bad flag) the dashboard resets to a stopped state and surfaces the error on the Monitor page
 
 ### llama.cpp builds
-- **Install page** — installs prebuilt llama.cpp releases from ggml-org's GitHub releases, one per backend (Vulkan, CUDA 12.8 / 13.3 with the runtime bundled, ROCm 10.0, CPU; Metal on Apple Silicon), into `~/.local/share/llama-admin-monitor/llama.cpp/<backend>-<tag>/`. Each install runs `--list-devices` and shows what it can see. Presets pick a build under *GPU distribution → Build*, so an NVIDIA-only preset can use the CUDA build while a multi-GPU preset uses Vulkan. A build can also be made the default binary in Settings with one click. Upstream builds are single-backend; mixing CUDA and Vulkan devices in one process still needs a self-compiled binary with both enabled.
+- **Install page** — installs prebuilt llama.cpp releases from ggml-org's GitHub releases, one per backend (Vulkan, CUDA 12.8 / 13.3 with the runtime bundled, ROCm 10.0, CPU; Metal on Apple Silicon), into `~/.local/share/llama-admin-monitor/llama.cpp/<backend>-<tag>/`. Each install runs `--list-devices` and shows what it can see. Presets pick a build under *GPU distribution → Build*, so an NVIDIA-only preset can use the CUDA build while a multi-GPU preset uses Vulkan. A build can also be made the default binary in Settings with one click. Each installed build shows whether it is on the newest upstream release; **Update** installs the new tag, moves presets and Settings over and removes the old build. Upstream builds are single-backend; mixing CUDA and Vulkan devices in one process still needs a self-compiled binary with both enabled.
 
 ### Model management
 - **Models page** — every `.gguf` in your models directory with quantisation, size, VRAM fit, source repo, download date and the repo's last-updated date on Hugging Face; sortable columns
@@ -255,6 +255,7 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `GET` | `/api/builds/installed` | Installed builds with the devices each can see |
 | `POST` | `/api/builds/install` | Install `{"backend", "tag"}`; progress arrives via the WebSocket |
 | `POST` | `/api/builds/remove` | Remove an installed build by id |
+| `POST` | `/api/builds/update` | Reinstall an installed build at the newest upstream tag; presets and Settings that used it are moved over and the old build is removed |
 | `POST` | `/api/builds/use` | Point Settings at an installed build |
 | `GET` | `/api/app/logs?after=N` | The monitor's own event log (entries newer than sequence N) |
 | `GET` | `/api/app/update/check` | Running version/track and the latest stable and beta releases |

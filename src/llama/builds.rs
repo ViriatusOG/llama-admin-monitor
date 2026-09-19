@@ -175,6 +175,52 @@ fn is_build_tag(tag: &str) -> bool {
     tag.len() > 1 && tag.starts_with('b') && tag[1..].chars().all(|c| c.is_ascii_digit())
 }
 
+/// The number in a build tag, for "is this newer" comparisons.
+pub fn tag_number(tag: &str) -> Option<u64> {
+    if !is_build_tag(tag) {
+        return None;
+    }
+    tag[1..].parse().ok()
+}
+
+/// Newest upstream build tag.
+pub async fn latest_tag() -> Result<String> {
+    recent_releases(1)
+        .await?
+        .into_iter()
+        .next()
+        .map(|r| r.tag)
+        .context("no llama.cpp releases found")
+}
+
+/// Moves everything that referenced build `old` to build `new`: presets on
+/// `build:<old>` and, when Settings points at the old binary, Settings too.
+/// Returns how many presets changed.
+pub fn repoint(state: &AppState, old: &InstalledBuild, new: &InstalledBuild) -> usize {
+    let old_ref = format!("build:{}", old.id);
+    let new_ref = format!("build:{}", new.id);
+    let mut changed = 0;
+    {
+        let mut presets = state.presets.lock().unwrap();
+        for preset in presets.iter_mut() {
+            if preset.backend == old_ref {
+                preset.backend = new_ref.clone();
+                changed += 1;
+            }
+        }
+        if changed > 0 {
+            let _ = crate::presets::save_presets(&state.presets_path, &presets);
+        }
+    }
+    let mut settings = state.ui_settings.lock().unwrap();
+    if settings.llama_server_path == old.server_path.display().to_string() {
+        settings.llama_server_path = new.server_path.display().to_string();
+        settings.llama_server_cwd = new.dir.display().to_string();
+        let _ = crate::state::save_ui_settings(&state.ui_settings_path, &settings);
+    }
+    changed
+}
+
 /// Recent upstream releases, newest first. The API listing is tried
 /// first; its rate limit falls back to the Atom feed.
 pub async fn recent_releases(limit: usize) -> Result<Vec<UpstreamRelease>> {
@@ -483,6 +529,8 @@ mod tests {
     #[test]
     fn build_tags_only() {
         assert!(is_build_tag("b11050"));
+        assert_eq!(tag_number("b11050"), Some(11050));
+        assert_eq!(tag_number("v0.4.1"), None);
         assert!(!is_build_tag("v0.4.1"));
         assert!(!is_build_tag("b"));
         assert!(!is_build_tag("main"));

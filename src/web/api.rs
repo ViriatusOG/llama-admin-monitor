@@ -1039,14 +1039,84 @@ fn api_builds(
         .and(warp::get())
         .map(|| warp::reply::json(&serde_json::json!({"builds": builds::installed_builds()})));
 
+    // Starts an install in the background, reporting through
+    // `state.build_install`. With `replace`, the named build is superseded
+    // once the new one is in: presets and Settings move over and it is
+    // removed.
+    fn spawn_install(
+        state: AppState,
+        app_config: Arc<AppConfig>,
+        backend: String,
+        tag: String,
+        replace: Option<builds::InstalledBuild>,
+    ) -> Result<(), String> {
+        let mut slot = state.build_install.lock().unwrap();
+        if slot.as_ref().is_some_and(|p| !p.done) {
+            return Err("an install is already running".to_string());
+        }
+        *slot = Some(builds::InstallProgress {
+            id: builds::build_id(&backend, &tag),
+            backend: backend.clone(),
+            tag: tag.clone(),
+            phase: "Starting".to_string(),
+            ..Default::default()
+        });
+        drop(slot);
+        crate::applog::info(format!("Installing llama.cpp {tag} ({backend})"));
+        tokio::spawn(async move {
+            let result = builds::install(state.clone(), app_config, backend, tag).await;
+            let mut phase = None;
+            if let (Ok(build), Some(old)) = (&result, replace.as_ref()) {
+                let moved = builds::repoint(&state, old, build);
+                match builds::remove(&old.id) {
+                    Ok(()) => crate::applog::info(format!(
+                        "Updated llama.cpp build {} -> {} ({moved} preset(s) moved)",
+                        old.id, build.id
+                    )),
+                    Err(e) => crate::applog::warn(format!(
+                        "Installed {} but could not remove {}: {e:#}",
+                        build.id, old.id
+                    )),
+                }
+                phase = Some(format!("Updated {} to {}", old.id, build.id));
+            }
+            let mut slot = state.build_install.lock().unwrap();
+            if let Some(p) = slot.as_mut() {
+                p.done = true;
+                match &result {
+                    Ok(build) => {
+                        p.phase = phase.unwrap_or_else(|| format!("Installed {}", build.id));
+                        crate::applog::info(format!(
+                            "Installed llama.cpp build {} ({} device(s) found)",
+                            build.id,
+                            build.devices.len()
+                        ));
+                    }
+                    Err(e) => {
+                        p.error = Some(format!("{e:#}"));
+                        crate::applog::error(format!("llama.cpp install failed: {e:#}"));
+                    }
+                }
+            }
+        });
+        Ok(())
+    }
+
+    fn ok_or_error(result: Result<(), String>) -> warp::reply::Json {
+        match result {
+            Ok(()) => warp::reply::json(&serde_json::json!({"ok": true})),
+            Err(e) => warp::reply::json(&serde_json::json!({"ok": false, "error": e})),
+        }
+    }
+
     let install_state = state.clone();
     let install_config = app_config.clone();
     let install = warp::path!("api" / "builds" / "install")
         .and(warp::post())
         .and(warp::body::json())
         .and(warp::any().map(move || (install_state.clone(), install_config.clone())))
-        .and_then(
-            |body: serde_json::Value, (state, app_config): (AppState, Arc<AppConfig>)| async move {
+        .map(
+            |body: serde_json::Value, (state, app_config): (AppState, Arc<AppConfig>)| {
                 let backend = body
                     .get("backend")
                     .and_then(|v| v.as_str())
@@ -1058,48 +1128,44 @@ fn api_builds(
                     .unwrap_or("")
                     .to_string();
                 if backend.is_empty() || tag.is_empty() {
-                    return Ok::<_, warp::Rejection>(warp::reply::json(
-                        &serde_json::json!({"ok": false, "error": "backend and tag required"}),
-                    ));
+                    return ok_or_error(Err("backend and tag required".to_string()));
                 }
-                {
-                    let mut slot = state.build_install.lock().unwrap();
-                    if slot.as_ref().is_some_and(|p| !p.done) {
-                        return Ok(warp::reply::json(
-                            &serde_json::json!({"ok": false, "error": "an install is already running"}),
-                        ));
-                    }
-                    *slot = Some(builds::InstallProgress {
-                        id: builds::build_id(&backend, &tag),
-                        backend: backend.clone(),
-                        tag: tag.clone(),
-                        phase: "Starting".to_string(),
-                        ..Default::default()
-                    });
+                ok_or_error(spawn_install(state, app_config, backend, tag, None))
+            },
+        );
+
+    // Reinstall an installed build at the newest upstream tag, then move
+    // presets/Settings over and drop the old one.
+    let update_state = state.clone();
+    let update_config = app_config.clone();
+    let update = warp::path!("api" / "builds" / "update")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(warp::any().map(move || (update_state.clone(), update_config.clone())))
+        .and_then(
+            |body: serde_json::Value, (state, app_config): (AppState, Arc<AppConfig>)| async move {
+                let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let Some(old) = builds::installed_build(id) else {
+                    return Ok::<_, warp::Rejection>(ok_or_error(Err("no such build".to_string())));
+                };
+                let latest = match builds::latest_tag().await {
+                    Ok(tag) => tag,
+                    Err(e) => return Ok(ok_or_error(Err(format!("{e:#}")))),
+                };
+                if builds::tag_number(&latest) <= builds::tag_number(&old.tag) {
+                    return Ok(ok_or_error(Err(format!(
+                        "{} is already the newest release ({latest})",
+                        old.tag
+                    ))));
                 }
-                crate::applog::info(format!("Installing llama.cpp {tag} ({backend})"));
-                tokio::spawn(async move {
-                    let result = builds::install(state.clone(), app_config, backend, tag).await;
-                    let mut slot = state.build_install.lock().unwrap();
-                    if let Some(p) = slot.as_mut() {
-                        p.done = true;
-                        match &result {
-                            Ok(build) => {
-                                p.phase = format!("Installed {}", build.id);
-                                crate::applog::info(format!(
-                                    "Installed llama.cpp build {} ({} device(s) found)",
-                                    build.id,
-                                    build.devices.len()
-                                ));
-                            }
-                            Err(e) => {
-                                p.error = Some(format!("{e:#}"));
-                                crate::applog::error(format!("llama.cpp install failed: {e:#}"));
-                            }
-                        }
-                    }
-                });
-                Ok(warp::reply::json(&serde_json::json!({"ok": true})))
+                let backend = old.backend.clone();
+                Ok(ok_or_error(spawn_install(
+                    state,
+                    app_config,
+                    backend,
+                    latest,
+                    Some(old),
+                )))
             },
         );
 
@@ -1152,6 +1218,7 @@ fn api_builds(
     catalog
         .or(installed)
         .or(install)
+        .or(update)
         .or(remove)
         .or(use_build)
         .boxed()
