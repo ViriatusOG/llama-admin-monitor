@@ -44,6 +44,7 @@ impl Default for UiSettings {
             llama_server_path: String::new(),
             llama_server_cwd: String::new(),
             models_dir: String::new(),
+            pi_workdir: String::new(),
         }
     }
 }
