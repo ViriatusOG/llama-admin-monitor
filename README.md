@@ -30,7 +30,7 @@ Same dashboard in the **Mint** light theme:
 - **Logs page** — the monitor's own event log (launch failures and why, detected crashes, update progress, telemetry and download problems) with timestamps, a problems-only filter and Download
 - **Inference card** — prompt/generation speed, slot status and KV-cache occupancy (with a bar that turns amber at 80 % and red at 95 %), from llama-server's Prometheus endpoint
 - **VRAM usage card** — one segmented bar across every GPU, coloured per vendor (AMD, NVIDIA, Intel) with an estimated context/KV segment and free space, labelled in GB
-- **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together
+- **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together. AMD cards list all three sensors rocm-smi exposes — **Hotspot** (junction, the value the card throttles on), **Edge** and **Memory** — with thresholds suited to each; NVIDIA cards show the single sensor `nvidia-smi` reports
 - **CPU, Memory and Disk cards** — per-core utilisation grid and CPU model, load average, RAM and swap, populated DIMM slots with type and speed (via `dmidecode`, see below), disk read/write throughput and free space on the models volume (from `/proc` on Linux)
 - **Arrange the dashboard** — drag cards by their grip (or move them with the arrow keys) and hide the ones you don't need; the layout is remembered per browser
 
@@ -67,9 +67,11 @@ Same dashboard in the **Mint** light theme:
 | NVIDIA | `nvidia-smi` | `nvidia-smi` |
 | Intel | `xpu-smi` | — |
 
-Multiple vendors are monitored at once — a machine with both an AMD and an NVIDIA card gets one card per GPU. Override detection with `--gpu-backend rocm|nvidia|none`.
+Multiple vendors are monitored at once — a machine with both an AMD and an NVIDIA card gets one card per GPU. In `auto` mode each vendor tool is probed once at startup and skipped, with a single warning in the Logs page, if it fails or reports no GPUs — so a leftover `nvidia-smi` after swapping the NVIDIA card out does not spam the log. A tool that stops working later is logged once per outage and once on recovery. Override detection with `--gpu-backend rocm|nvidia|none`.
 
-**RDNA 4 note:** `gfx1201` (RX 9070 / 9070 XT / 9070 GRE) requires ROCm 7.2 or newer for `rocminfo` to enumerate the GPU. The versions of `rocminfo` and `rocm-smi` in Ubuntu's default repositories predate RDNA 4 and will not detect these cards; install ROCm from AMD's repository instead.
+**AMD card names:** `rocm-smi` names cards from libdrm's `amdgpu.ids`, which lags new hardware and reports unknown cards as a bare "AMD Radeon Graphics". When that happens the monitor resolves the name from the PCI device id (RX 9070 XT, RX 9070, RX 9060 XT and Radeon AI PRO R9700 are built in), then from `lspci` (your system's `pci.ids`; `sudo update-pciids` refreshes it), and otherwise shows the generic name tagged with the gfx target and device id, e.g. `AMD Radeon Graphics (gfx1201, 0x7551)`. If you see that form for a card you can name, open an issue with the id.
+
+**RDNA 4 note:** `gfx1201` (RX 9070 / 9070 XT / 9070 GRE / Radeon AI PRO R9700) requires ROCm 7.2 or newer for `rocminfo` to enumerate the GPU. The versions of `rocminfo` and `rocm-smi` in Ubuntu's default repositories predate RDNA 4 and will not detect these cards; install ROCm from AMD's repository instead.
 
 ## Installation
 
