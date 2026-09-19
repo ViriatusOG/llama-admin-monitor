@@ -1,3 +1,4 @@
+mod applog;
 mod cli;
 mod config;
 mod gpu;
@@ -25,11 +26,11 @@ async fn main() -> Result<()> {
 
     // Load presets from disk (or defaults)
     let initial_presets = presets::load_presets(&app_config.presets_file);
-    println!(
-        "[info] Loaded {} presets from {}",
+    applog::info(format!(
+        "Loaded {} presets from {}",
         initial_presets.len(),
         app_config.presets_file.display()
-    );
+    ));
 
     // Load GPU environment config
     let mut gpu_env = gpu::env::load_gpu_env(&app_config.gpu_env_file);
@@ -44,25 +45,25 @@ async fn main() -> Result<()> {
 
     // Auto-detect GPUs and log results
     if let Some(detected) = gpu::env::detect_gpus() {
-        println!(
-            "[info] Detected {}x {} GPU(s)",
+        applog::info(format!(
+            "Detected {}x {} GPU(s)",
             detected.count, detected.arch
-        );
+        ));
         // If arch is "auto" and devices is empty, suggest detected values
         if gpu_env.arch == "auto" && gpu_env.devices.is_empty() {
             gpu_env.devices = gpu::env::device_list_for_count(detected.count);
         }
     }
 
-    println!(
-        "[info] GPU env: arch={}, devices={}",
+    applog::info(format!(
+        "GPU env: arch={}, devices={}",
         gpu_env.arch,
         if gpu_env.devices.is_empty() {
             "all"
         } else {
             &gpu_env.devices
         }
-    );
+    ));
 
     // Load UI settings from disk (or defaults)
     let ui_settings = state::load_ui_settings(&app_config.ui_settings_file);
@@ -87,7 +88,7 @@ async fn main() -> Result<()> {
 
     if let Some(ref dir) = models_dir {
         let count = state.discovered_models.lock().unwrap().len();
-        println!("[info] Discovered {count} models in {}", dir.display());
+        applog::info(format!("Discovered {count} models in {}", dir.display()));
     }
 
     // Detect and start GPU poller
@@ -98,7 +99,7 @@ async fn main() -> Result<()> {
             loop {
                 match backend.read_metrics() {
                     Ok(m) => *gpu.lock().unwrap() = m,
-                    Err(e) => eprintln!("[error] GPU metrics: {e}"),
+                    Err(e) => applog::error(format!("GPU metrics: {e}")),
                 }
                 thread::sleep(GPU_POLL_INTERVAL);
             }
@@ -139,7 +140,11 @@ async fn main() -> Result<()> {
                  running? Stop it (e.g. `pkill -f llama-admin-monitor`) or pass --port."
             )
         })?;
-    println!("[info] Llama Admin Monitor running on http://{addr}");
+    applog::info(format!(
+        "Llama Admin Monitor {} ({} track) listening on http://{addr}",
+        update::current_version(),
+        update::current_track()
+    ));
     server.await;
 
     Ok(())

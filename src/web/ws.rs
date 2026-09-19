@@ -39,6 +39,7 @@ pub fn ws_route(
                             let server_error = state.server_error.lock().unwrap().clone();
                             let system = state.system_stats.lock().unwrap().clone();
                             let app_update = state.update_phase.lock().unwrap().clone();
+                            let app_log_seq = crate::applog::latest_seq();
                             serde_json::json!({
                                 "gpu": gpu,
                                 "llama": llama,
@@ -50,6 +51,7 @@ pub fn ws_route(
                                 "server_error": server_error,
                                 "system": system,
                                 "app_update": app_update,
+                                "app_log_seq": app_log_seq,
                             })
                             .to_string()
                         };

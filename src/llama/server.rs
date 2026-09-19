@@ -269,6 +269,12 @@ pub async fn start_server(
             app_config.llama_server_cwd.display()
         )
     })?;
+    crate::applog::info(format!(
+        "Launched {} on port {} with {}",
+        binary_path.display(),
+        config.port,
+        config.model_path
+    ));
 
     // Capture stdout
     if let Some(stdout) = child.stdout.take() {
@@ -348,6 +354,7 @@ pub async fn start_server(
                         format!("llama-server exited unexpectedly ({status}).")
                     };
                     watch_state.push_log(format!("[monitor] {msg}"));
+                    crate::applog::error(&msg);
                     *watch_state.server_error.lock().unwrap() = Some(msg);
                     break;
                 }
@@ -425,5 +432,6 @@ pub async fn stop_server(state: &AppState) -> Result<()> {
         *err = None;
     }
     state.push_log("[monitor] Server stopped.".into());
+    crate::applog::info("llama-server stopped");
     Ok(())
 }

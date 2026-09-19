@@ -194,12 +194,11 @@
                         <span class="badge badge-green hidden" id="monitor-process-state">Running</span>
                         <span class="badge badge-dim" id="monitor-output-lines">0 lines</span>
                         <span class="monitor-sep" aria-hidden="true"></span>
-                        <button class="btn btn-sm btn-ghost" type="button" onclick="event.preventDefault(); event.stopPropagation(); switchTab('logs')">Open Logs</button>
                         <button class="btn btn-sm btn-ghost" id="btn-clear-output" type="button" onclick="clearOutput(event)">Clear</button>
                         <span class="icon icon-sm details-chevron"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
                     </div>
                 </summary>
-                <div id="log-panel" class="terminal log-panel" aria-label="llama-server output"></div>
+                <div id="log-panel" class="terminal" aria-label="llama-server output"></div>
             </details>
 
             <div class="monitor-section">
@@ -323,16 +322,15 @@
             <div class="page-header">
                 <div>
                     <h1 class="page-title">Logs</h1>
-                    <div class="page-title-sub">Everything llama-server prints, from the most recent launch. The same stream as the Process Output card on Monitor.</div>
+                    <div class="page-title-sub">What Llama Admin Monitor itself reported: launches and failures, update progress, telemetry and download problems. llama-server's own output is under Process Output on Monitor.</div>
                 </div>
                 <div class="page-actions">
-                    <span class="badge badge-dim" id="logs-count">0 lines</span>
-                    <button class="btn btn-sm" type="button" onclick="downloadLogs()">Download</button>
-                    <button class="btn btn-sm btn-ghost" type="button" onclick="clearOutput()">Clear</button>
+                    <label class="toggle" for="logs-problems-only"><input type="checkbox" id="logs-problems-only" onchange="renderAppLog()"> Problems only</label>
+                    <span class="badge badge-dim" id="logs-count">0 entries</span>
+                    <button class="btn btn-sm" type="button" onclick="downloadAppLog()">Download</button>
                 </div>
             </div>
-            <div class="status-box error" id="logs-error" hidden></div>
-            <div id="log-panel-full" class="terminal terminal-full log-panel" aria-label="llama-server output"></div>
+            <div class="card card-flush app-log" id="app-log" aria-label="Monitor event log" aria-live="polite"></div>
         </div>
 
         <!-- ═══ PRESETS ═══ -->

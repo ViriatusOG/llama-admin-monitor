@@ -38,6 +38,7 @@ pub fn api_routes(
     let hf_download = api_hf_download(state.clone());
     let v1_proxy = api_v1_proxy(state.clone());
     let app_update_check = api_app_update_check();
+    let app_logs = api_app_logs();
     let app_update_apply = api_app_update_apply(state);
 
     start
@@ -62,6 +63,7 @@ pub fn api_routes(
         .or(v1_proxy)
         .or(app_update_check)
         .or(app_update_apply)
+        .or(app_logs)
 }
 
 fn api_start(
@@ -88,9 +90,12 @@ fn api_start(
                     Ok(()) => Ok::<_, warp::Rejection>(warp::reply::json(
                         &serde_json::json!({"ok": true}),
                     )),
-                    Err(e) => Ok(warp::reply::json(
-                        &serde_json::json!({"ok": false, "error": e.to_string()}),
-                    )),
+                    Err(e) => {
+                        crate::applog::error(format!("Start failed: {e:#}"));
+                        Ok(warp::reply::json(
+                            &serde_json::json!({"ok": false, "error": e.to_string()}),
+                        ))
+                    }
                 }
             }
         })
@@ -625,7 +630,12 @@ fn api_hf_download(
             let models_dir_state = state.models_dir.clone();
             let discovered_models = state.discovered_models.clone();
             tokio::spawn(async move {
-                hf::download_hf_files(repo, files, dest_dir, progress).await;
+                crate::applog::info(format!("Downloading {} from {repo}", files.join(", ")));
+                hf::download_hf_files(repo, files, dest_dir, progress.clone()).await;
+                match progress.lock().unwrap().as_ref().and_then(|p| p.error.clone()) {
+                    Some(err) => crate::applog::error(format!("Download failed: {err}")),
+                    None => crate::applog::info("Download finished"),
+                }
                 let dir_opt = models_dir_state.lock().unwrap().clone();
                 if let Some(dir) = dir_opt
                     && let Ok(discovered) = crate::models::scan_models_dir(&dir)
@@ -877,7 +887,7 @@ fn api_app_update_apply(
             // UI through the `app_update` field of the WebSocket payload.
             tokio::spawn(async move {
                 if let Err(e) = update::apply_update(state.clone(), track).await {
-                    eprintln!("[update] failed: {e:#}");
+                    crate::applog::error(format!("Update failed: {e:#}"));
                     *state.update_phase.lock().unwrap() = Some(format!("Error: {e:#}"));
                     // Leave the error visible briefly, then clear so a retry
                     // is possible.
@@ -913,4 +923,26 @@ mod tests {
             assert!(!is_hop_by_hop(h), "{h}");
         }
     }
+}
+
+/// The monitor's own event log, for the Logs page. `after` is the last
+/// sequence number the client has; omit it for the most recent entries.
+fn api_app_logs() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("api" / "app" / "logs")
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .map(|q: std::collections::HashMap<String, String>| {
+            let after = q.get("after").and_then(|v| v.parse::<u64>().ok());
+            let entries = match after {
+                Some(after) => crate::applog::entries_after(after, 2000),
+                None => {
+                    let latest = crate::applog::latest_seq();
+                    crate::applog::entries_after(latest.saturating_sub(500), 500)
+                }
+            };
+            warp::reply::json(&serde_json::json!({
+                "latest_seq": crate::applog::latest_seq(),
+                "entries": entries,
+            }))
+        })
 }

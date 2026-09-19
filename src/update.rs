@@ -251,7 +251,9 @@ async fn list_releases(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
     match fetch_releases(client).await {
         Ok(releases) => Ok(releases),
         Err(api_err) => {
-            println!("[update] GitHub API unavailable ({api_err:#}); using the releases feed");
+            crate::applog::warn(format!(
+                "GitHub API unavailable ({api_err:#}); using the releases feed"
+            ));
             fetch_releases_atom(client)
                 .await
                 .with_context(|| format!("{api_err:#}"))
@@ -333,7 +335,7 @@ async fn check_updates_uncached() -> Result<UpdateStatus> {
 
 fn set_phase(state: &AppState, phase: &str) {
     *state.update_phase.lock().unwrap() = Some(phase.to_string());
-    println!("[update] {phase}");
+    crate::applog::info(format!("Update: {phase}"));
 }
 
 /// True when `bytes` starts like a native executable for this platform, so
@@ -467,7 +469,7 @@ fn restart(exe: PathBuf) {
             use std::os::unix::process::CommandExt;
             let args: Vec<String> = std::env::args().skip(1).collect();
             let err = std::process::Command::new(&exe).args(&args).exec();
-            eprintln!("[update] exec failed: {err}");
+            crate::applog::error(format!("Update: exec failed: {err}"));
         }
     });
 }

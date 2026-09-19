@@ -27,6 +27,7 @@ Same dashboard in the **Mint** light theme:
 ### Monitoring
 - **Live runtime strip** — server state, loaded model, endpoint and active preset at the top of the Monitor page, plus a persistent runtime summary in the sidebar
 - **Process output** — llama-server's stderr streamed into a terminal card, with Clear
+- **Logs page** — the monitor's own event log (launch failures and why, detected crashes, update progress, telemetry and download problems) with timestamps, a problems-only filter and Download
 - **Inference card** — prompt/generation speed, slot status and KV-cache occupancy (with a bar that turns amber at 80 % and red at 95 %), from llama-server's Prometheus endpoint
 - **VRAM usage card** — one segmented bar across every GPU, coloured per vendor (AMD, NVIDIA, Intel) with an estimated context/KV segment and free space, labelled in GB
 - **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together
@@ -245,6 +246,7 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `GET` | `/api/gpu-env` | Get GPU environment config |
 | `PUT` | `/api/gpu-env` | Save GPU environment config |
 | `ANY` | `/v1/*` | Transparent proxy to the running llama-server's OpenAI-compatible API |
+| `GET` | `/api/app/logs?after=N` | The monitor's own event log (entries newer than sequence N) |
 | `GET` | `/api/app/update/check` | Running version/track and the latest stable and beta releases |
 | `POST` | `/api/app/update/apply` | Install `{"track": "main"\|"beta"}` and restart; progress arrives via the WebSocket |
 

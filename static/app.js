@@ -20,7 +20,7 @@ function switchTab(name) {
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
-    if (name === 'logs') { const el = document.getElementById('log-panel-full'); el.scrollTop = el.scrollHeight; }
+    if (name === 'logs') { logsUnread = 0; renderLogsNav(); const el = document.getElementById('app-log'); el.scrollTop = el.scrollHeight; }
 
     const wasOpen = document.getElementById('sidebar').classList.contains('open');
     setNavigationOpen(false);
@@ -2093,26 +2093,81 @@ function clearOutput(e) {
         e.stopPropagation();
     }
     logClearedAt = prevLogLen;
-    document.querySelectorAll('.log-panel').forEach(el => { el.textContent = ''; });
+    document.getElementById('log-panel').textContent = '';
     setLogCounts(0);
 }
 
 function setLogCounts(shown) {
-    const label = shown + (shown === 1 ? ' line' : ' lines');
-    document.getElementById('monitor-output-lines').textContent = label;
-    document.getElementById('logs-count').textContent = label;
-    document.getElementById('nav-count-logs').textContent = shown > 0 ? String(shown) : '';
+    document.getElementById('monitor-output-lines').textContent = shown + (shown === 1 ? ' line' : ' lines');
 }
 
-let lastLogs = [];
+// --- Monitor event log (Logs page) ---
 
-function downloadLogs() {
-    const text = lastLogs.slice(logClearedAt).join('\n');
-    if (!text) { showToast('No log output to download', 'warn'); return; }
-    const blob = new Blob([text + '\n'], { type: 'text/plain' });
+let appLog = [];
+let appLogSeq = 0;
+let appLogFetching = false;
+let logsUnread = 0;
+
+function renderLogsNav() {
+    const el = document.getElementById('nav-count-logs');
+    el.textContent = logsUnread > 0 ? String(logsUnread) : '';
+    el.classList.toggle('is-alert', logsUnread > 0);
+}
+
+function fmtLogTime(ms) {
+    const d = new Date(ms);
+    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour12: false });
+}
+
+function renderAppLog() {
+    const host = document.getElementById('app-log');
+    const problemsOnly = document.getElementById('logs-problems-only').checked;
+    const rows = problemsOnly ? appLog.filter(e => e.level !== 'info') : appLog;
+    const wasAtBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 40;
+    if (rows.length === 0) {
+        host.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + (problemsOnly ? 'No warnings or errors' : 'Nothing logged yet') + '</div><p>Launches, failures, updates and telemetry problems appear here.</p></div>';
+    } else {
+        host.innerHTML = rows.map(e =>
+            '<div class="app-log-row is-' + e.level + '">' +
+            '<span class="app-log-time">' + fmtLogTime(e.ts_ms) + '</span>' +
+            '<span class="app-log-level ' + e.level + '">' + e.level + '</span>' +
+            '<span class="app-log-msg">' + escapeHtml(e.message) + '</span></div>'
+        ).join('');
+    }
+    document.getElementById('logs-count').textContent = rows.length + (rows.length === 1 ? ' entry' : ' entries');
+    if (wasAtBottom) host.scrollTop = host.scrollHeight;
+}
+
+// Pulls entries newer than what we have. Driven by the WebSocket's
+// app_log_seq, so idle pages never poll.
+async function fetchAppLog() {
+    if (appLogFetching) return;
+    appLogFetching = true;
+    try {
+        const res = await fetch('/api/app/logs' + (appLogSeq > 0 ? '?after=' + appLogSeq : ''));
+        const data = await res.json();
+        const fresh = data.entries || [];
+        if (fresh.length) {
+            appLog = appLog.concat(fresh).slice(-2000);
+            appLogSeq = fresh[fresh.length - 1].seq;
+            if (activeSection !== 'logs') {
+                logsUnread += fresh.filter(e => e.level !== 'info').length;
+                renderLogsNav();
+            }
+            renderAppLog();
+        }
+        if (data.latest_seq > appLogSeq) appLogSeq = data.latest_seq;
+    } catch (_) { /* next tick retries */ }
+    appLogFetching = false;
+}
+
+function downloadAppLog() {
+    if (appLog.length === 0) { showToast('Nothing logged yet', 'warn'); return; }
+    const text = appLog.map(e => new Date(e.ts_ms).toISOString() + ' [' + e.level + '] ' + e.message).join('\n') + '\n';
+    const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'llama-server-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.log';
+    a.download = 'llama-admin-monitor-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.log';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -2124,13 +2179,10 @@ function renderLogs(logs) {
     // The backlog shrinks when the server restarts; drop the cleared offset
     // so the new run's output is visible.
     if (logs.length < logClearedAt) logClearedAt = 0;
-    lastLogs = logs;
-    const text = logs.slice(logClearedAt).join('\n');
-    document.querySelectorAll('.log-panel').forEach(el => {
-        const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-        el.textContent = text;
-        if (wasAtBottom) el.scrollTop = el.scrollHeight;
-    });
+    const el = document.getElementById('log-panel');
+    const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    el.textContent = logs.slice(logClearedAt).join('\n');
+    if (wasAtBottom) el.scrollTop = el.scrollHeight;
     prevLogLen = logs.length;
     setLogCounts(logs.length - logClearedAt);
 }
@@ -2138,7 +2190,7 @@ function renderLogs(logs) {
 // WebSocket
 loadModelsCache();
 const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-ws.onopen = () => { wsConnected = true; renderRuntime(); scheduleUpdateChecks(); };
+ws.onopen = () => { wsConnected = true; renderRuntime(); scheduleUpdateChecks(); fetchAppLog(); };
 ws.onmessage = e => {
     const d = JSON.parse(e.data);
 
@@ -2161,9 +2213,7 @@ ws.onmessage = e => {
     }
     errBox.hidden = !d.server_error;
     if (d.server_error) errBox.textContent = d.server_error;
-    const logsErr = document.getElementById('logs-error');
-    logsErr.hidden = !d.server_error;
-    if (d.server_error) logsErr.textContent = d.server_error;
+    if ((d.app_log_seq || 0) > appLogSeq) fetchAppLog();
 
     renderRuntime();
 

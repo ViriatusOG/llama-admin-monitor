@@ -56,7 +56,7 @@ impl GpuBackend for MultiBackend {
         for backend in &self.backends {
             match backend.read_metrics() {
                 Ok(metrics) => all.extend(metrics),
-                Err(e) => eprintln!("[error] GPU metrics ({}): {e}", backend.name()),
+                Err(e) => crate::applog::error(format!("GPU metrics ({}): {e}", backend.name())),
             }
         }
         Ok(all)
@@ -83,7 +83,7 @@ pub fn detect_backend(force: &str) -> Arc<dyn GpuBackend> {
             }
             match backends.len() {
                 0 => {
-                    eprintln!("[warn] No GPU monitoring tool found (rocm-smi / nvidia-smi)");
+                    crate::applog::warn("No GPU monitoring tool found (rocm-smi / nvidia-smi)");
                     Arc::new(dummy::DummyBackend)
                 }
                 1 => backends.into_iter().next().unwrap(),

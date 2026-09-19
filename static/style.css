@@ -611,7 +611,19 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 .update-indicator:hover { background: var(--green-border); }
 .update-indicator .badge-dot { width: 5px; height: 5px; }
 .logs-page { display: flex; flex-direction: column; height: calc(100vh - 100px); min-height: 360px; }
-.terminal-full { flex: 1; min-height: 0; max-height: none; }
+.app-log { flex: 1; min-height: 0; overflow-y: auto; font-family: var(--mono); font-size: 12px; }
+.app-log-row { display: grid; grid-template-columns: 150px 58px minmax(0, 1fr); gap: var(--space-3); padding: 5px var(--space-4); border-bottom: 1px solid var(--border); align-items: baseline; }
+.app-log-row:last-child { border-bottom: none; }
+.app-log-row.is-error { background: var(--red-subtle); }
+.app-log-row.is-warn { background: var(--yellow-subtle); }
+.app-log-time { color: var(--fg-faint); white-space: nowrap; }
+.app-log-level { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.app-log-level.info { color: var(--fg-muted); }
+.app-log-level.warn { color: var(--yellow); }
+.app-log-level.error { color: var(--red); }
+.app-log-msg { color: var(--fg); overflow-wrap: anywhere; white-space: pre-wrap; }
+.logs-page .toggle input { display: inline-block; accent-color: var(--accent); }
+.nav-count.is-alert { color: var(--red); font-weight: 700; }
 .toast-action { flex-shrink: 0; margin: -2px 0 -2px 4px; padding: 3px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: transparent; color: var(--accent-text); font: inherit; font-size: 12px; font-weight: 600; line-height: 1.2; white-space: nowrap; cursor: pointer; }
 .toast-action:hover { background: var(--bg-hover); color: var(--fg-bright); }
 

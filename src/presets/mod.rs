@@ -77,10 +77,14 @@ pub fn load_presets(path: &Path) -> Vec<ModelPreset> {
         match std::fs::read_to_string(path) {
             Ok(contents) => match serde_json::from_str::<Vec<ModelPreset>>(&contents) {
                 Ok(presets) if !presets.is_empty() => return presets,
-                Ok(_) => eprintln!("[warn] Presets file is empty, using defaults"),
-                Err(e) => eprintln!("[warn] Failed to parse presets file: {e}, using defaults"),
+                Ok(_) => crate::applog::warn("Presets file is empty, using defaults"),
+                Err(e) => crate::applog::warn(format!(
+                    "Failed to parse presets file: {e}, using defaults"
+                )),
             },
-            Err(e) => eprintln!("[warn] Failed to read presets file: {e}, using defaults"),
+            Err(e) => crate::applog::warn(format!(
+                "Failed to read presets file: {e}, using defaults"
+            )),
         }
     }
     let presets = default_presets();
