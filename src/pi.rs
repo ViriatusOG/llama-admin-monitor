@@ -56,7 +56,12 @@ pub fn find_pi() -> Option<PathBuf> {
         return Some(p);
     }
     let home = dirs::home_dir()?;
-    for rel in [".pi/bin/pi", ".local/bin/pi", ".npm-global/bin/pi", ".bun/bin/pi"] {
+    for rel in [
+        ".pi/bin/pi",
+        ".local/bin/pi",
+        ".npm-global/bin/pi",
+        ".bun/bin/pi",
+    ] {
         let p = home.join(rel);
         if p.is_file() {
             return Some(p);

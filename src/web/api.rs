@@ -1338,9 +1338,9 @@ fn api_pi(
                     crate::applog::info(format!("Started pi in {}", cwd.display()));
                     warp::reply::json(&serde_json::json!({"ok": true}))
                 }
-                Err(e) => warp::reply::json(
-                    &serde_json::json!({"ok": false, "error": format!("{e:#}")}),
-                ),
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+                }
             }
         });
 
@@ -1367,12 +1367,14 @@ fn api_pi(
                 rows,
             ) {
                 Ok(()) => {
-                    crate::applog::info("Running the pi installer (curl -fsSL https://pi.dev/install.sh | sh)");
+                    crate::applog::info(
+                        "Running the pi installer (curl -fsSL https://pi.dev/install.sh | sh)",
+                    );
                     warp::reply::json(&serde_json::json!({"ok": true}))
                 }
-                Err(e) => warp::reply::json(
-                    &serde_json::json!({"ok": false, "error": format!("{e:#}")}),
-                ),
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+                }
             }
         });
 
