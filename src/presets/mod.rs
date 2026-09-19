@@ -82,9 +82,9 @@ pub fn load_presets(path: &Path) -> Vec<ModelPreset> {
                     "Failed to parse presets file: {e}, using defaults"
                 )),
             },
-            Err(e) => crate::applog::warn(format!(
-                "Failed to read presets file: {e}, using defaults"
-            )),
+            Err(e) => {
+                crate::applog::warn(format!("Failed to read presets file: {e}, using defaults"))
+            }
         }
     }
     let presets = default_presets();

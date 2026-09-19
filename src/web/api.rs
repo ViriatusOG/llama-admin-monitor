@@ -632,7 +632,12 @@ fn api_hf_download(
             tokio::spawn(async move {
                 crate::applog::info(format!("Downloading {} from {repo}", files.join(", ")));
                 hf::download_hf_files(repo, files, dest_dir, progress.clone()).await;
-                match progress.lock().unwrap().as_ref().and_then(|p| p.error.clone()) {
+                match progress
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|p| p.error.clone())
+                {
                     Some(err) => crate::applog::error(format!("Download failed: {err}")),
                     None => crate::applog::info("Download finished"),
                 }
