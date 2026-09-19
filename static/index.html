@@ -226,29 +226,31 @@
                         <div class="card-header">
                             <div>
                                 <div class="card-kicker" id="monitor-inference-kicker">Llama server</div>
-                                <div class="card-title">Inference</div>
+                                <div class="card-title" id="monitor-inference-title">Inference</div>
                             </div>
                             <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move Inference card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="inference" aria-label="Hide Inference card">Hide</button><span class="badge badge-dim" id="m-status">&mdash;</span></div>
                         </div>
                         <div class="monitor-inference-summary">
                             <div class="monitor-inference-stat">
-                                <span class="monitor-metric-label">Prompt speed</span>
+                                <span class="monitor-metric-label" title="Prompt processing speed">Prompt</span>
                                 <span class="monitor-metric-reading" id="m-prompt">&mdash;</span>
                             </div>
                             <div class="monitor-inference-stat">
-                                <span class="monitor-metric-label">Generation speed</span>
+                                <span class="monitor-metric-label" title="Token generation speed">Generation</span>
                                 <span class="monitor-metric-reading" id="m-gen">&mdash;</span>
-                            </div>
-                            <div class="monitor-inference-stat">
-                                <span class="monitor-metric-label">Slots</span>
-                                <span class="monitor-metric-reading" id="m-slots">&mdash;</span>
                             </div>
                         </div>
                         <div class="monitor-metric-row">
-                            <span class="monitor-metric-label">Context (KV cache)</span>
+                            <span class="monitor-metric-label" title="Context (KV cache) in use">KV cache</span>
                             <span class="monitor-metric-reading" id="m-ctx">&mdash;</span>
                         </div>
                         <div class="progress-bar"><div class="progress-fill" id="m-ctx-bar"></div></div>
+                        <div class="monitor-gpu-meta">
+                            <div class="monitor-metric-row"><span class="monitor-metric-label">Slots</span><span class="monitor-metric-reading" id="m-slots">&mdash;</span></div>
+                            <div class="monitor-metric-row"><span class="monitor-metric-label">Requests in flight</span><span class="monitor-metric-reading" id="m-requests">&mdash;</span></div>
+                            <div class="monitor-metric-row"><span class="monitor-metric-label">Prompt tokens</span><span class="monitor-metric-reading" id="m-prompt-total" title="Since llama-server started">&mdash;</span></div>
+                            <div class="monitor-metric-row"><span class="monitor-metric-label">Generated tokens</span><span class="monitor-metric-reading" id="m-gen-total" title="Since llama-server started">&mdash;</span></div>
+                        </div>
                     </div>
 
                     <div class="card monitor-vram-card" data-monitor-key="vram" data-monitor-label="GPU Memory Pool">

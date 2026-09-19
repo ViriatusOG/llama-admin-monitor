@@ -1508,6 +1508,14 @@ function renderDiskHealth(d) {
     row('sys-disk-realloc-row', 'sys-disk-realloc', d.reallocated_sectors != null ? String(d.reallocated_sectors) : null, d.reallocated_sectors > 0 ? ' is-warn' : '');
 }
 
+function fmtCount(n) {
+    n = n || 0;
+    if (n < 10000) return n.toLocaleString();
+    if (n < 1e6) return (n / 1e3).toFixed(1) + 'K';
+    if (n < 1e9) return (n / 1e6).toFixed(2) + 'M';
+    return (n / 1e9).toFixed(2) + 'B';
+}
+
 function fmtHours(h) {
     if (h < 48) return h + ' h';
     const days = h / 24;
@@ -2470,7 +2478,7 @@ ws.onmessage = e => {
     const ctxBar = document.getElementById('m-ctx-bar');
     if (l.kv_cache_max > 0) {
         const pctNum = (l.kv_cache_tokens / l.kv_cache_max) * 100;
-        document.getElementById('m-ctx').textContent = l.kv_cache_tokens.toLocaleString() + ' / ' + l.kv_cache_max.toLocaleString() + ' (' + pctNum.toFixed(1) + '%)';
+        document.getElementById('m-ctx').textContent = fmtCount(l.kv_cache_tokens) + ' / ' + fmtCount(l.kv_cache_max) + ' · ' + pctNum.toFixed(0) + '%';
         ctxBar.style.width = Math.min(100, pctNum).toFixed(1) + '%';
         ctxBar.className = barClass(pctNum);
     } else {
@@ -2478,6 +2486,17 @@ ws.onmessage = e => {
         ctxBar.style.width = '0%';
     }
     document.getElementById('m-slots').textContent = l.slots_idle + l.slots_processing > 0 ? l.slots_idle + ' idle \u00b7 ' + l.slots_processing + ' busy' : '\u2014';
+    document.getElementById('m-requests').textContent = serverRunning ? String(l.requests_processing || 0) : '\u2014';
+    document.getElementById('m-prompt-total').textContent = serverRunning ? fmtCount(l.prompt_tokens_total) : '\u2014';
+    document.getElementById('m-gen-total').textContent = serverRunning ? fmtCount(l.predicted_tokens_total) : '\u2014';
+    // The loaded model is the card's title while it runs, like a GPU card
+    // names its device.
+    const infTitle = document.getElementById('monitor-inference-title');
+    const modelName = serverRunning && d.model_path ? d.model_path.split('/').pop().replace(/\.gguf$/i, '') : '';
+    if (infTitle.textContent !== (modelName || 'Inference')) {
+        infTitle.textContent = modelName || 'Inference';
+        infTitle.title = d.model_path || '';
+    }
 
     const statusEl = document.getElementById('m-status');
     statusEl.textContent = l.status || (serverRunning ? 'waiting' : 'offline');

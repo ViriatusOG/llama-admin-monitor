@@ -19,6 +19,7 @@ Backwards compatibility is preserved unless explicitly noted.
 - Install page: each installed llama.cpp build shows whether it is on the newest upstream release ("up to date" / "bNNNNN available") with an **Update to bNNNNN** button. Updating installs the new tag for the same backend, moves presets and Settings that used the old build over to it, and removes the old one; a summary line above the list says how many builds are behind. (`POST /api/builds/update {id}`)
 
 ### Changed
+- The Inference card matches the other cards: same size, the loaded model as its title while running, prompt/generation speed side by side, a KV-cache row and bar, and a detail block with slots, requests in flight, and prompt/generated token totals since the server started.
 - Release tags are zero-padded from now on (`v2026.09.22-beta.01`), so GitHub's text-sorted release list matches numeric order. The updater already compares numerically and accepts both spellings.
 - Monitor cards keep their drag grip, Hide and icon on the title line; a long device name wraps inside its own column instead of pushing the tools down. GPU card titles drop the vendor prefix the kicker already shows ("Radeon AI PRO R9700" under "GPU 0 · AMD"; the full name is in the tooltip).
 - The GPU Memory Pool card is the same size as the GPU cards and lists every device's used/total VRAM under the pooled bar, in the vendor colours of the legend; the total moved from the header badge to a "Used" row.
