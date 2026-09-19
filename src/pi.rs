@@ -174,7 +174,11 @@ pub fn write_models_json(monitor_port: u16, models: &[ModelEntry]) -> Result<Pat
     write_models_json_at(models_json_path(), monitor_port, models)
 }
 
-fn write_models_json_at(path: PathBuf, monitor_port: u16, models: &[ModelEntry]) -> Result<PathBuf> {
+fn write_models_json_at(
+    path: PathBuf,
+    monitor_port: u16,
+    models: &[ModelEntry],
+) -> Result<PathBuf> {
     let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text)
             .with_context(|| format!("{} is not valid JSON", path.display()))?,
