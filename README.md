@@ -1,6 +1,6 @@
 # Llama Admin Monitor
 
-Web control panel for [llama.cpp](https://github.com/ggerganov/llama.cpp) servers: live GPU, CPU, memory and disk monitoring with an nvtop-style activity view, one-click installs of prebuilt llama.cpp builds (Vulkan, CUDA, ROCm, CPU, Metal), model management with Hugging Face downloads, multi-GPU VRAM visualisation, automated tensor-split benchmarking, an OpenAI-compatible endpoint that follows whichever model is loaded, and in-app updates — in a single self-contained Rust binary.
+Web control panel for [llama.cpp](https://github.com/ggerganov/llama.cpp) servers: live GPU, CPU, memory and disk monitoring with an nvtop-style activity view, one-click installs of prebuilt llama.cpp builds (Vulkan, CUDA, ROCm, CPU, Metal), model management with Hugging Face downloads, multi-GPU VRAM visualisation, automated tensor-split benchmarking, an OpenAI-compatible endpoint that follows whichever model is loaded, the [pi](https://pi.dev) coding agent in an embedded terminal, and in-app updates — in a single self-contained Rust binary.
 
 It began as a fork of [arte-fact/llama-monitor](https://github.com/arte-fact/llama-monitor) (extended into an admin dashboard as [ViriatusOG/llama-monitor](https://github.com/ViriatusOG/llama-monitor)) and now carries a UI modelled on [LLama-GUI](https://github.com/thomas9120/LLama-GUI): a grouped sidebar, card-based pages, and five WCAG-AA themes.
 
@@ -9,6 +9,10 @@ It began as a fork of [arte-fact/llama-monitor](https://github.com/arte-fact/lla
 Monitor, in the **Nebula** theme — inference, GPU activity with five minutes of history and the processes on each GPU, pooled VRAM, CPU, memory, the disk behind the models directory with SMART health, and one card per GPU:
 
 ![Monitor](docs/images/monitor.png)
+
+The **pi** coding agent running on the server, inside the dashboard, against the loaded model:
+
+![Pi](docs/images/pi.png)
 
 | Install llama.cpp | Logs |
 | --- | --- |
@@ -57,11 +61,13 @@ Same dashboard in the **Mint** light theme:
 ### Optimisation
 - **Benchmark page** — sweeps tensor-split ratios, and optionally batch sizes, micro-batch sizes and thread counts, through `llama-bench`; reports prompt and generation throughput per combination, marks the fastest and applies it to a preset in one click. Large sweeps ask for confirmation with the run count; cancellable, keeping results so far
 
+### AI coding agent
+- **Pi page** — [pi](https://pi.dev), the minimal coding agent, runs in a real pseudo-terminal on the server and is rendered in the dashboard with xterm.js; the session survives page changes and reloads (recent scrollback is replayed on reattach). Pick a working directory, press Start, and pi comes up on a `llama-admin-monitor` provider the monitor writes into `~/.pi/agent/models.json`: one model entry per **preset**, named after the preset, pointing at the monitor's `/v1` proxy with the preset's context size. pi starts on the active preset; `/model` inside pi lists the others. When pi is not installed, **Install pi** runs its official installer in the same terminal. Only the pi process runs as the monitor's user, with the monitor's environment.
+
 ### Interface
 - **Five themes** — Tokyo and Nebula (dark), Graphite (mid-tone), Cappuccino and Mint (light), picked from the sidebar and remembered per browser
 - **OpenAI-compatible proxy** — everything under `/v1/*` is forwarded to the running llama-server, so clients such as SillyTavern or the OpenAI SDKs can point at `http://<monitor>:7778/v1` and follow whichever model is loaded
 - **Integrated chat** — streaming chat through that proxy, with collapsible reasoning blocks and Markdown rendering
-- **Pi coding agent** — [pi](https://pi.dev) in a terminal on the server, embedded in the dashboard and pointed at the loaded model through the same proxy (a `llama-admin-monitor` provider is written to `~/.pi/agent/models.json` on every start). Pick a working directory and Start; the session keeps running between page visits. One-click install when pi is missing
 - **In-app updates** — Settings → App Updates installs the newest GitHub release for your track (stable `main` or pre-release `beta`) and restarts; see [Updates and release tracks](#updates-and-release-tracks)
 - **File browser** for binaries, directories and models; **persistent settings** (preset, port, paths, models directory); **responsive** layout with a navigation drawer on phones; installable as a PWA
 
