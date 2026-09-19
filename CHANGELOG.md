@@ -20,7 +20,7 @@ Backwards compatibility is preserved unless explicitly noted.
 - A bare `llama-server` name that is not on PATH is reported as such at launch instead of "No such file or directory".
 - Launch checks explain a llama-server path that is a directory, a file without the execute bit, or a missing working directory, and spawn errors name the path and directory tried instead of a bare "Permission denied".
 - When the GitHub API is unavailable (its rate limit, most often), releases are read from the repository's Atom feed instead, so checking and installing updates keep working.
-- Update checks are cached for 15 minutes server-side (page loads no longer each cost a GitHub API call), GitHub's rate limit is explained with a retry time, and `LLAMA_ADMIN_GITHUB_TOKEN` can raise the limit. "Check for updates" always fetches fresh.
+- Update checks are cached for 5 minutes server-side (page loads no longer each cost a GitHub API call), GitHub's rate limit is explained with a retry time, and `LLAMA_ADMIN_GITHUB_TOKEN` can raise the limit. "Check for updates" always fetches fresh.
 - Rows hidden with the `hidden` attribute could still render when a class set `display`; `[hidden]` now always wins.
 - Static assets are served with `Cache-Control: no-cache` and versioned URLs, so a browser can no longer pair a freshly updated binary with a cached script from the previous build (which made the Settings dialog misbehave after an update).
 

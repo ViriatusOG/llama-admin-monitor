@@ -23,7 +23,7 @@ const MIN_BINARY_BYTES: u64 = 1_000_000;
 /// How long a successful release listing is reused. Unauthenticated GitHub
 /// API calls are limited to 60 per hour per address, and every page load
 /// asks; without this a busy afternoon of reloads hits the limit.
-const CHECK_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+const CHECK_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
 static CHECK_CACHE: Mutex<Option<(Instant, UpdateStatus)>> = Mutex::new(None);
 
