@@ -3285,7 +3285,7 @@ function renderPiStatus() {
     } else if (st.exit_code != null && !st.running) {
         note.textContent = (st.label || 'pi') + ' exited with code ' + st.exit_code + '. Start it again when ready.';
     } else {
-        note.innerHTML = 'Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.models_json || '~/.pi/agent/models.json') + '</code> points pi at this monitor\'s <code>/v1</code> endpoint. Every preset is listed as a model; pi starts on the loaded model (or the active preset) and <code>/model</code> inside pi switches between them. Requests always go to whatever llama-server has loaded.';
+        note.innerHTML = 'Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.models_json || '~/.pi/agent/models.json') + '</code> points pi at this monitor\'s <code>/v1</code> endpoint. Every preset is listed as a model under its preset name; pi starts on the active preset and <code>/model</code> inside pi lists the others. Requests always go to whatever llama-server has loaded, so start the matching preset from the sidebar.';
     }
 }
 

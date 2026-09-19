@@ -1294,26 +1294,15 @@ fn api_pi(
                     "error": "pi is not installed; use Install pi first"
                 }));
             };
-            // Every preset is a model in pi's list; start on the loaded
-            // model if the server is running, else on the active preset.
+            // Every preset is a model in pi's list; start on the active
+            // preset (the one the sidebar launches), else the first.
             let presets = state.presets.lock().unwrap().clone();
             let entries = pi::entries_from_presets(&presets);
-            let running_model = state
-                .server_config
-                .lock()
-                .unwrap()
-                .as_ref()
-                .map(|c| pi::model_id_for(&c.model_path));
-            let active_model = {
-                let preset_id = state.ui_settings.lock().unwrap().preset_id.clone();
-                presets
-                    .iter()
-                    .find(|p| p.id == preset_id)
-                    .map(|p| pi::model_id_for(&p.model_path))
-            };
-            let model_id = running_model
-                .or(active_model)
-                .filter(|id| entries.iter().any(|e| &e.id == id))
+            let active_preset = state.ui_settings.lock().unwrap().preset_id.clone();
+            let model_id = entries
+                .iter()
+                .find(|e| e.preset_id == active_preset)
+                .map(|e| e.id.clone())
                 .unwrap_or_else(|| entries[0].id.clone());
             if let Err(e) = pi::write_models_json(start_config.port, &entries) {
                 return warp::reply::json(&serde_json::json!({

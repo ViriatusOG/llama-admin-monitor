@@ -121,11 +121,13 @@ pub fn status(shared: &Shared) -> Status {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelEntry {
     /// Passed to the API as the model id. llama-server serves one model
-    /// and ignores it, so the model file's stem doubles as a readable label
-    /// in pi's status bar.
+    /// and ignores it, so the preset name doubles as the label in pi's
+    /// status bar.
     pub id: String,
     pub name: String,
     pub context_window: u64,
+    /// The preset this entry came from (empty for the placeholder).
+    pub preset_id: String,
 }
 
 /// The model id pi uses for a preset: the model file's name without
@@ -138,23 +140,33 @@ pub fn model_id_for(model_path: &str) -> String {
         .unwrap_or_else(|| "llama-server".to_string())
 }
 
-/// Every preset as a model entry, deduplicated by id (two presets on the
-/// same file keep the first's name and the larger context).
+/// Every preset as a model entry. The preset's name is the model id:
+/// llama-server ignores the id, and pi shows it in its status bar and
+/// `/model` list, so the preset is what the user sees and picks. Two
+/// presets with the same name get a numeric suffix.
 pub fn entries_from_presets(presets: &[crate::presets::ModelPreset]) -> Vec<ModelEntry> {
     let mut out: Vec<ModelEntry> = Vec::new();
     for p in presets {
         if p.model_path.trim().is_empty() {
             continue;
         }
-        let id = model_id_for(&p.model_path);
-        if let Some(existing) = out.iter_mut().find(|e| e.id == id) {
-            existing.context_window = existing.context_window.max(p.context_size);
-            continue;
+        let base = p.name.trim();
+        let base = if base.is_empty() {
+            model_id_for(&p.model_path)
+        } else {
+            base.to_string()
+        };
+        let mut id = base.clone();
+        let mut n = 2;
+        while out.iter().any(|e| e.id == id) {
+            id = format!("{base} ({n})");
+            n += 1;
         }
         out.push(ModelEntry {
             id,
-            name: p.name.clone(),
+            name: format!("{} \u{2014} {}", p.name.trim(), model_id_for(&p.model_path)),
             context_window: p.context_size.max(4096),
+            preset_id: p.id.clone(),
         });
     }
     if out.is_empty() {
@@ -162,6 +174,7 @@ pub fn entries_from_presets(presets: &[crate::presets::ModelPreset]) -> Vec<Mode
             id: "llama-server".to_string(),
             name: "llama-server (current model)".to_string(),
             context_window: 32768,
+            preset_id: String::new(),
         });
     }
     out
@@ -353,6 +366,7 @@ mod tests {
             id: id.to_string(),
             name: id.to_string(),
             context_window: ctx,
+            preset_id: String::new(),
         }
     }
 
@@ -393,22 +407,26 @@ mod tests {
     #[test]
     fn presets_become_models() {
         let mut a = crate::presets::default_presets().remove(0);
-        a.name = "Big".into();
+        a.id = "p1".into();
+        a.name = "Big 128k".into();
         a.model_path = "/m/Qwen3-32B-Q4_K_M.gguf".into();
-        a.context_size = 65536;
+        a.context_size = 131072;
         let mut b = a.clone();
-        b.name = "Same file, more context".into();
-        b.context_size = 131072;
+        b.id = "p2".into();
+        b.name = "Big single GPU".into();
         let mut c = a.clone();
-        c.name = "Small".into();
+        c.id = "p3".into();
+        c.name = "Big 128k".into(); // same name as a: gets a suffix
         c.model_path = "/m/gemma-3-12b-it-Q4_K_M.gguf".into();
         c.context_size = 8192;
         let entries = entries_from_presets(&[a, b, c]);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].id, "Qwen3-32B-Q4_K_M");
-        assert_eq!(entries[0].name, "Big");
-        assert_eq!(entries[0].context_window, 131072);
-        assert_eq!(entries[1].id, "gemma-3-12b-it-Q4_K_M");
+        assert_eq!(entries.len(), 3, "one entry per preset, not per file");
+        assert_eq!(entries[0].id, "Big 128k");
+        assert_eq!(entries[0].name, "Big 128k \u{2014} Qwen3-32B-Q4_K_M");
+        assert_eq!(entries[0].preset_id, "p1");
+        assert_eq!(entries[1].id, "Big single GPU");
+        assert_eq!(entries[2].id, "Big 128k (2)");
+        assert_eq!(entries[2].context_window, 8192);
         assert_eq!(model_id_for(""), "llama-server");
     }
 }
