@@ -277,13 +277,19 @@ fn to_info(r: &GhRelease, asset: Option<&str>) -> ReleaseInfo {
     }
 }
 
-/// Sortable form of a release version: `YYYY.M.D` with an optional
-/// `-beta.N`. A stable release outranks any beta of the same day, and
-/// `beta.12` outranks `beta.9` (a plain string compare gets that wrong,
-/// and so does GitHub's own listing order, which sorts by tag name).
+/// Sortable form of a release version. Stable releases are SemVer
+/// (`1.2.3`, from v1.0.0 on); betas are zero-padded CalVer
+/// (`2026.09.22-beta.01`). Stable releases before v1.0.0 were CalVer too,
+/// and every SemVer release is newer than any of those, so the scheme is
+/// the first thing compared. Within a scheme the numbers compare
+/// numerically (so `beta.12` outranks `beta.9`, which a plain string
+/// compare and GitHub's own tag-sorted listing both get wrong), and a
+/// stable release outranks a beta of the same day.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VersionKey {
-    date: (u32, u32, u32),
+    /// 1 for SemVer, 0 for CalVer: the scheme switch is a strict upgrade.
+    scheme: u8,
+    numbers: (u32, u32, u32),
     /// 1 for a stable release, 0 for a beta, so stable sorts higher.
     stable: u8,
     beta: u32,
@@ -291,14 +297,14 @@ pub struct VersionKey {
 
 pub fn version_key(version: &str) -> Option<VersionKey> {
     let v = version.trim().trim_start_matches('v');
-    let (date, rest) = match v.split_once('-') {
+    let (numbers, rest) = match v.split_once('-') {
         Some((d, r)) => (d, Some(r)),
         None => (v, None),
     };
-    let mut parts = date.split('.').map(|n| n.parse::<u32>().ok());
-    let y = parts.next().flatten()?;
-    let m = parts.next().flatten()?;
-    let d = parts.next().flatten()?;
+    let mut parts = numbers.split('.').map(|n| n.parse::<u32>().ok());
+    let a = parts.next().flatten()?;
+    let b = parts.next().flatten()?;
+    let c = parts.next().flatten()?;
     if parts.next().is_some() {
         return None;
     }
@@ -306,8 +312,11 @@ pub fn version_key(version: &str) -> Option<VersionKey> {
         None => (1, 0),
         Some(r) => (0, r.strip_prefix("beta.")?.parse::<u32>().ok()?),
     };
+    // A leading year marks CalVer; anything smaller is a SemVer major.
+    let scheme = if a >= 2000 { 0 } else { 1 };
     Some(VersionKey {
-        date: (y, m, d),
+        scheme,
+        numbers: (a, b, c),
         stable,
         beta,
     })
@@ -589,6 +598,14 @@ mod tests {
         assert!(k("2026.9.21") > k("2026.9.21-beta.12"));
         assert!(k("2026.10.1") > k("2026.9.30"));
         assert!(k("v2026.9.21") == k("2026.9.21"));
+        // Stable releases moved to SemVer at v1.0.0; every SemVer release
+        // outranks the CalVer stables before it, and SemVer compares
+        // numerically.
+        assert!(k("1.0.0") > k("2026.9.20"));
+        assert!(k("1.2.10") > k("1.2.9"));
+        assert!(k("2.0.0") > k("1.99.99"));
+        assert!(is_newer("1.0.0", "2026.9.20"));
+        assert!(!is_newer("2026.9.20", "1.0.0"));
         // Zero-padded tags (the format from v2026.09.22 on) equal unpadded.
         assert!(k("2026.09.22-beta.01") == k("2026.9.22-beta.1"));
         assert!(k("2026.09.22-beta.01") > k("2026.9.21-beta.14"));

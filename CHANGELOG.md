@@ -3,10 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to Calendar Versioning (CalVer). Release tags are zero-padded `vYYYY.MM.DD` (`-beta.NN` for betas) from `v2026.09.22` on; earlier tags are unpadded.
+and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on (earlier stable releases were CalVer `YYYY.M.D`). Beta releases keep zero-padded CalVer tags, `vYYYY.MM.DD-beta.NN`.
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-19
+First SemVer stable release; it carries everything from the `v2026.9.21` / `v2026.09.22` beta series below. In-app updates from `v2026.9.20` treat it as newer.
+
 ### Added
 - **Install page** (sidebar → Library → Install): installs prebuilt llama.cpp releases straight from ggml-org's GitHub releases, one directory per backend and version, no compiler needed. Offers Vulkan, CUDA 12.8, CUDA 13.3 (both with the CUDA runtime libraries bundled), ROCm 10.0 and CPU on Linux x64; Vulkan/CUDA/CPU on Linux arm64; Metal on Apple Silicon. Each install is smoke-tested with `--list-devices` and lists the devices it found. Builds can be removed, or set as the binary in Settings with one click.
 - Presets choose a build under GPU distribution → Build (installed builds, the configured binary, or the legacy `build-cuda` tree); the Devices picker and the Benchmark page follow that choice.
