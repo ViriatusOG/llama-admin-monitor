@@ -145,7 +145,13 @@ mod tests {
     #[test]
     fn generic_names_resolve_from_device_id() {
         assert_eq!(
-            resolve_amd_name("AMD Radeon Graphics", "gfx1201", Some(0x7551), Some(0xc0), None),
+            resolve_amd_name(
+                "AMD Radeon Graphics",
+                "gfx1201",
+                Some(0x7551),
+                Some(0xc0),
+                None
+            ),
             "AMD Radeon AI PRO R9700"
         );
         assert_eq!(
