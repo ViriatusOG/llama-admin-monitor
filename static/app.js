@@ -1291,6 +1291,16 @@ function renderSystemCards(sys) {
     if (sys.sample_secs) cpuBits.push(sys.sample_secs.toFixed(1) + ' s sample');
     document.getElementById('sys-cpu-sub').textContent = cpuBits.join(' \u00b7 ');
     document.getElementById('sys-cpu-model').textContent = sys.cpu_model || '';
+    const cpuTemp = document.getElementById('sys-cpu-temp');
+    if (sys.cpu_temp_c == null) {
+        cpuTemp.textContent = 'Not available';
+        cpuTemp.className = 'monitor-metric-reading monitor-not-available';
+        cpuTemp.title = 'No CPU sensor found under /sys/class/hwmon (k10temp, coretemp, cpu_thermal)';
+    } else {
+        cpuTemp.textContent = Math.round(sys.cpu_temp_c) + ' \u00b0C';
+        cpuTemp.className = 'monitor-metric-reading' + (sys.cpu_temp_c >= 95 ? ' is-bad' : sys.cpu_temp_c >= 85 ? ' is-warn' : '');
+        cpuTemp.title = '';
+    }
 
     const coresGrid = document.getElementById('sys-cpu-cores');
     if (sys.core_percent && sys.core_percent.length > 0) {

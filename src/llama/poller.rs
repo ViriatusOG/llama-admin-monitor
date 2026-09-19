@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use crate::state::AppState;
 
-use super::metrics::parse_prometheus_metrics;
+use super::metrics::{SlotRates, SlotSample, parse_prometheus_metrics};
+use std::time::Instant;
 
 const LLAMA_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -11,6 +12,9 @@ pub async fn llama_metrics_poller(state: AppState) {
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
+
+    let mut rates = SlotRates::default();
+    let mut last_slots_poll = Instant::now();
 
     loop {
         // Determine port: from config if started via UI, else default 8080
@@ -76,9 +80,11 @@ pub async fn llama_metrics_poller(state: AppState) {
                 0.0
             };
 
+            // The gauges are exact for the task that just finished (and zero
+            // otherwise); remember them for the idle display.
+            rates.record_task_average(prompt_tps, gen_tps);
+
             let mut m = state.llama_metrics.lock().unwrap();
-            m.prompt_tokens_per_sec = prompt_tps;
-            m.generation_tokens_per_sec = gen_tps;
             m.prompt_tokens_total = prom.prompt_tokens_total as u64;
             m.predicted_tokens_total = prom.predicted_tokens_total as u64;
             m.kv_cache_tokens = prom.n_tokens_max;
@@ -94,6 +100,10 @@ pub async fn llama_metrics_poller(state: AppState) {
             let mut processing = 0u32;
             let num_slots = slots.len() as u64;
             let mut per_slot_ctx = 0u64;
+            let samples: Vec<SlotSample> = slots.iter().filter_map(SlotSample::from_json).collect();
+            let now = Instant::now();
+            rates.update(&samples, now.duration_since(last_slots_poll).as_secs_f64());
+            last_slots_poll = now;
             for slot in &slots {
                 if slot
                     .get("is_processing")
@@ -109,6 +119,8 @@ pub async fn llama_metrics_poller(state: AppState) {
                 }
             }
             let mut m = state.llama_metrics.lock().unwrap();
+            m.prompt_tokens_per_sec = rates.prompt_tps();
+            m.generation_tokens_per_sec = rates.gen_tps();
             m.slots_idle = idle;
             m.slots_processing = processing;
             if per_slot_ctx > 0 {

@@ -14,6 +14,8 @@ pub struct SystemStats {
     pub core_percent: Vec<Option<f32>>,
     pub cpu_cores: u32,
     pub cpu_model: String,
+    /// Package/die temperature from hwmon, when a CPU sensor is exposed.
+    pub cpu_temp_c: Option<f32>,
     pub load_avg_1m: Option<f32>,
     pub mem_total_bytes: u64,
     pub mem_used_bytes: u64,
@@ -114,6 +116,7 @@ impl SystemSampler {
             );
         }
         stats.cpu_model = self.cpu_model.clone().unwrap_or_default();
+        stats.cpu_temp_c = read_cpu_temp();
 
         if self.dimms.is_none() {
             self.dimms = Some(probe_dimms());
@@ -327,6 +330,129 @@ fn parse_dmi_size(value: &str) -> Option<u64> {
 /// "4800 MT/s" / "2133 MHz" -> 4800 / 2133; "Unknown" -> None.
 fn parse_dmi_speed(value: &str) -> Option<u32> {
     value.split_whitespace().next()?.parse().ok()
+}
+
+/// One hwmon temperature reading: driver name, channel label, value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TempReading {
+    pub driver: String,
+    pub label: String,
+    pub celsius: f32,
+}
+
+/// Chooses the CPU temperature among hwmon readings. AMD's k10temp exposes
+/// Tctl (the throttling-control value, offset on some parts) and Tdie (the
+/// real die temperature): Tdie wins, then Tctl. Intel's coretemp exposes a
+/// package reading plus one per core: the package wins, else the hottest
+/// core. ARM boards usually have a `cpu_thermal` or `soc_thermal` driver.
+pub fn pick_cpu_temp(readings: &[TempReading]) -> Option<f32> {
+    for amd in ["k10temp", "zenpower"] {
+        if let Some(t) =
+            labelled(readings, amd, "Tdie").or_else(|| labelled(readings, amd, "Tctl"))
+        {
+            return Some(t);
+        }
+        if let Some(t) = hottest(readings, amd) {
+            return Some(t);
+        }
+    }
+    if let Some(t) =
+        labelled(readings, "coretemp", "Package id 0").or_else(|| hottest(readings, "coretemp"))
+    {
+        return Some(t);
+    }
+    for arm in ["cpu_thermal", "cpu-thermal", "soc_thermal", "soc-thermal", "acpitz"] {
+        if let Some(t) = hottest(readings, arm) {
+            return Some(t);
+        }
+    }
+    None
+}
+
+fn by_driver<'a>(
+    readings: &'a [TempReading],
+    driver: &'a str,
+) -> impl Iterator<Item = &'a TempReading> + 'a {
+    readings.iter().filter(move |r| r.driver == driver)
+}
+
+fn labelled(readings: &[TempReading], driver: &str, label: &str) -> Option<f32> {
+    by_driver(readings, driver)
+        .find(|r| r.label.eq_ignore_ascii_case(label))
+        .map(|r| r.celsius)
+}
+
+fn hottest(readings: &[TempReading], driver: &str) -> Option<f32> {
+    by_driver(readings, driver).map(|r| r.celsius).reduce(f32::max)
+}
+
+/// Collects every `temp*_input` under /sys/class/hwmon with its driver
+/// name and label. Returns an empty list where hwmon is absent.
+fn hwmon_readings() -> Vec<TempReading> {
+    let mut out = Vec::new();
+    let Ok(dirs) = std::fs::read_dir("/sys/class/hwmon") else {
+        return out;
+    };
+    for dir in dirs.flatten() {
+        let path = dir.path();
+        let driver = std::fs::read_to_string(path.join("name"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        let Ok(files) = std::fs::read_dir(&path) else {
+            continue;
+        };
+        for f in files.flatten() {
+            let fname = f.file_name().to_string_lossy().to_string();
+            let Some(channel) = fname
+                .strip_prefix("temp")
+                .and_then(|r| r.strip_suffix("_input"))
+            else {
+                continue;
+            };
+            let Some(millideg) = std::fs::read_to_string(f.path())
+                .ok()
+                .and_then(|s| s.trim().parse::<i64>().ok())
+            else {
+                continue;
+            };
+            let label = std::fs::read_to_string(path.join(format!("temp{channel}_label")))
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            out.push(TempReading {
+                driver: driver.clone(),
+                label,
+                celsius: millideg as f32 / 1000.0,
+            });
+        }
+    }
+    out
+}
+
+/// Thermal zones as a fallback for systems whose CPU sensor is not a hwmon
+/// device (some ARM boards, x86_pkg_temp on older kernels).
+fn thermal_zone_cpu_temp() -> Option<f32> {
+    let dirs = std::fs::read_dir("/sys/class/thermal").ok()?;
+    let mut best: Option<f32> = None;
+    for dir in dirs.flatten() {
+        let path = dir.path();
+        let kind = std::fs::read_to_string(path.join("type")).unwrap_or_default();
+        let kind = kind.trim().to_ascii_lowercase();
+        if !(kind.contains("cpu") || kind.contains("x86_pkg") || kind.contains("soc")) {
+            continue;
+        }
+        if let Some(t) = std::fs::read_to_string(path.join("temp"))
+            .ok()
+            .and_then(|s| s.trim().parse::<f32>().ok())
+        {
+            let c = t / 1000.0;
+            best = Some(best.map_or(c, |b| b.max(c)));
+        }
+    }
+    best
+}
+
+pub fn read_cpu_temp() -> Option<f32> {
+    pick_cpu_temp(&hwmon_readings()).or_else(thermal_zone_cpu_temp)
 }
 
 pub fn parse_loadavg(text: &str) -> Option<f32> {
@@ -571,6 +697,41 @@ mod tests {
         assert_eq!(parse_dmi_size("weird"), None);
         assert_eq!(parse_dmi_speed("2133 MHz"), Some(2133));
         assert_eq!(parse_dmi_speed("Unknown"), None);
+    }
+
+    fn reading(driver: &str, label: &str, celsius: f32) -> TempReading {
+        TempReading {
+            driver: driver.into(),
+            label: label.into(),
+            celsius,
+        }
+    }
+
+    #[test]
+    fn cpu_temp_prefers_amd_die_then_intel_package_then_hottest_core() {
+        let amd = [
+            reading("nvme", "Composite", 41.0),
+            reading("k10temp", "Tctl", 72.0),
+            reading("k10temp", "Tdie", 62.0),
+            reading("k10temp", "Tccd1", 60.5),
+        ];
+        assert_eq!(pick_cpu_temp(&amd), Some(62.0));
+        let amd_tctl_only = [reading("k10temp", "Tctl", 72.0)];
+        assert_eq!(pick_cpu_temp(&amd_tctl_only), Some(72.0));
+        let intel = [
+            reading("coretemp", "Core 0", 55.0),
+            reading("coretemp", "Package id 0", 58.0),
+            reading("coretemp", "Core 1", 61.0),
+        ];
+        assert_eq!(pick_cpu_temp(&intel), Some(58.0));
+        let intel_cores_only = [
+            reading("coretemp", "Core 0", 55.0),
+            reading("coretemp", "Core 1", 61.0),
+        ];
+        assert_eq!(pick_cpu_temp(&intel_cores_only), Some(61.0));
+        let arm = [reading("cpu_thermal", "", 47.5)];
+        assert_eq!(pick_cpu_temp(&arm), Some(47.5));
+        assert_eq!(pick_cpu_temp(&[reading("nvme", "Composite", 41.0)]), None);
     }
 
     #[test]
