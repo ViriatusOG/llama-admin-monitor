@@ -102,17 +102,40 @@ async fn run_one(
     Ok((prompt_tps, gen_tps))
 }
 
+/// Everything a sweep varies: every combination of the four lists is run.
+#[derive(Debug, Clone)]
+pub struct SweepSpec {
+    pub model_path: String,
+    pub splits: Vec<String>,
+    pub batch_sizes: Vec<i32>,
+    pub ubatch_sizes: Vec<i32>,
+    pub thread_counts: Vec<i32>,
+    pub gpu_layers: i32,
+}
+
+impl SweepSpec {
+    pub fn total_runs(&self) -> usize {
+        self.splits.len()
+            * self.batch_sizes.len()
+            * self.ubatch_sizes.len()
+            * self.thread_counts.len()
+    }
+}
+
 pub async fn run_benchmark_sweep(
     bench_bin: PathBuf,
-    model_path: String,
-    splits: Vec<String>,
-    batch_sizes: Vec<i32>,
-    ubatch_sizes: Vec<i32>,
-    thread_counts: Vec<i32>,
-    gpu_layers: i32,
+    spec: SweepSpec,
     progress: SharedBenchProgress,
 ) {
-    let total_runs = splits.len() * batch_sizes.len() * ubatch_sizes.len() * thread_counts.len();
+    let SweepSpec {
+        model_path,
+        splits,
+        batch_sizes,
+        ubatch_sizes,
+        thread_counts,
+        gpu_layers,
+    } = spec.clone();
+    let total_runs = spec.total_runs();
     {
         let mut p = progress.lock().unwrap();
         *p = BenchProgress {

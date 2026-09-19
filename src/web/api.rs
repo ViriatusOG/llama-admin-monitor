@@ -804,17 +804,15 @@ fn api_bench_run(
 
                 let progress = state.bench_progress.clone();
                 tokio::spawn(async move {
-                    bench::run_benchmark_sweep(
-                        bench_bin,
+                    let spec = bench::SweepSpec {
                         model_path,
                         splits,
                         batch_sizes,
                         ubatch_sizes,
                         thread_counts,
                         gpu_layers,
-                        progress,
-                    )
-                    .await;
+                    };
+                    bench::run_benchmark_sweep(bench_bin, spec, progress).await;
                 });
 
                 warp::reply::json(&serde_json::json!({"ok": true}))
