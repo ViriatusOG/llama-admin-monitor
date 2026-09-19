@@ -336,11 +336,11 @@ CI (`cargo fmt --check`, `clippy -D warnings`, tests, release build) runs on pus
 Bump `version` in `Cargo.toml`, add a CHANGELOG entry, then tag:
 
 ```bash
-git tag v2026.9.21-beta.1 && git push origin v2026.9.21-beta.1   # beta track (pre-release)
-git tag v2026.9.21 && git push origin v2026.9.21                 # main track (stable)
+git tag v2026.09.22-beta.01 && git push origin v2026.09.22-beta.01   # beta track (pre-release)
+git tag v2026.09.22 && git push origin v2026.09.22                   # main track (stable)
 ```
 
-The release workflow builds all four targets, writes `SHA256SUMS`, and marks tags containing `-beta` as pre-releases. Versions are CalVer `YYYY.M.D`; use a `-beta.N` suffix for betas.
+The release workflow builds all four targets, writes `SHA256SUMS`, and marks tags containing `-beta` as pre-releases. Tags are zero-padded CalVer, `vYYYY.MM.DD` with a `-beta.NN` suffix for betas: GitHub orders its release list by tag name as text, and padding keeps that order equal to the numeric one (`beta.09` < `beta.14`, `2026.09` < `2026.10`). The `version` in `Cargo.toml` stays unpadded (`2026.9.22`) because Cargo requires semver without leading zeros; the in-app updater compares versions numerically, so both spellings coexist. Tags before `v2026.9.21-beta.14` are unpadded.
 
 ## Credits and licence
 

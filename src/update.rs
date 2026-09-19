@@ -589,6 +589,10 @@ mod tests {
         assert!(k("2026.9.21") > k("2026.9.21-beta.12"));
         assert!(k("2026.10.1") > k("2026.9.30"));
         assert!(k("v2026.9.21") == k("2026.9.21"));
+        // Zero-padded tags (the format from v2026.09.22 on) equal unpadded.
+        assert!(k("2026.09.22-beta.01") == k("2026.9.22-beta.1"));
+        assert!(k("2026.09.22-beta.01") > k("2026.9.21-beta.14"));
+        assert!(k("2026.10.01") > k("2026.09.30"));
         assert_eq!(version_key("nightly"), None);
         assert_eq!(version_key("2026.9.21-rc.1"), None);
         assert!(is_newer("2026.9.21-beta.12", "2026.9.21-beta.9"));
