@@ -1293,7 +1293,9 @@ fn api_pi(
                 },
             ) {
                 Ok(()) => {
-                    crate::applog::info("Updating pi (npm install -g @earendil-works/pi-coding-agent@latest)");
+                    crate::applog::info(
+                        "Updating pi (npm install -g @earendil-works/pi-coding-agent@latest)",
+                    );
                     warp::reply::json(&serde_json::json!({"ok": true}))
                 }
                 Err(e) => {
@@ -1599,7 +1601,12 @@ fn api_dsh(
                 program: npm.display().to_string(),
                 args,
                 cwd: home,
-                label: if update { "dsh updater" } else { "dsh installer" }.to_string(),
+                label: if update {
+                    "dsh updater"
+                } else {
+                    "dsh installer"
+                }
+                .to_string(),
                 cols,
                 rows,
                 env: Vec::new(),
