@@ -503,7 +503,7 @@ impl Session {
 /// output so plain-text matching works.
 pub fn strip_ansi(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
+    let mut chars = text.chars();
     while let Some(c) = chars.next() {
         if c == '\u{1b}' {
             match chars.next() {

@@ -338,11 +338,15 @@ mod tests {
 
     #[test]
     fn login_url_is_scraped() {
-        let text = "dsh web: listening\nOpen http://127.0.0.1:3080/?token=abc123 in your browser.\n";
+        let text =
+            "dsh web: listening\nOpen http://127.0.0.1:3080/?token=abc123 in your browser.\n";
         assert_eq!(find_login_path(text).as_deref(), Some("/?token=abc123"));
         let text = "http://127.0.0.1:3080/\nlater: http://127.0.0.1:3080/auth/xyz\n";
         assert_eq!(find_login_path(text).as_deref(), Some("/auth/xyz"));
-        assert_eq!(find_login_path("http://127.0.0.1:3080\n").as_deref(), Some("/"));
+        assert_eq!(
+            find_login_path("http://127.0.0.1:3080\n").as_deref(),
+            Some("/")
+        );
         assert_eq!(find_login_path("http://127.0.0.1:9999/?token=x"), None);
         assert_eq!(find_login_path("nothing here"), None);
     }
