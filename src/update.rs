@@ -108,7 +108,8 @@ async fn fetch_releases(client: &reqwest::Client) -> Result<Vec<GhRelease>> {
         .context("GitHub API request failed")?
         .error_for_status()
         .context("GitHub API returned an error")?;
-    resp.json().await.context("unexpected GitHub API response")
+    let bytes = resp.bytes().await.context("GitHub API response cut short")?;
+    serde_json::from_slice(&bytes).context("unexpected GitHub API response")
 }
 
 fn to_info(r: &GhRelease, asset: Option<&str>) -> ReleaseInfo {
