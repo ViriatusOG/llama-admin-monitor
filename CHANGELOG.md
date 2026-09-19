@@ -7,6 +7,13 @@ and this project adheres to Calendar Versioning (CalVer) with the format `YYYY.M
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+### Added
+- Logs page (sidebar, under Monitor): the full llama-server output with line count, Download and Clear; the crash notification now has a "View logs" button that opens it.
+- Update notifications: release builds check GitHub on load and every six hours, show an "Update" pill beside the version in the sidebar and a one-time toast per new release with an "Open updates" button that jumps to Settings > App Updates.
+
+### Fixed
+- Static assets are served with `Cache-Control: no-cache` and versioned URLs, so a browser can no longer pair a freshly updated binary with a cached script from the previous build (which made the Settings dialog misbehave after an update).
+
 ### Changed
 - In-app updates no longer need a git checkout or shell tools. The binary knows its release tag and track (baked in by the release workflow), queries GitHub Releases directly, verifies the download's size and executable header, stops llama-server itself and swaps the binary atomically before re-executing. A failed download or swap leaves the running binary untouched.
 - Tags containing `-beta` are published as GitHub pre-releases; the beta track installs those, so switching tracks now really changes the binary.

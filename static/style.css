@@ -606,6 +606,13 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 .updates-badges { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .updates-installing .progress-bar { margin-top: var(--space-2); }
 .track-badge { margin-left: 4px; padding: 0 5px; font-size: 8px; line-height: 1.4; }
+.update-indicator { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 0 6px; border: 1px solid var(--green-border); border-radius: 100px; background: var(--green-subtle); color: var(--green); font: inherit; font-size: 8px; font-weight: 700; line-height: 1.5; cursor: pointer; letter-spacing: 0.3px; }
+.update-indicator:hover { background: var(--green-border); }
+.update-indicator .badge-dot { width: 5px; height: 5px; }
+.logs-page { display: flex; flex-direction: column; height: calc(100vh - 100px); min-height: 360px; }
+.terminal-full { flex: 1; min-height: 0; max-height: none; }
+.toast-action { flex-shrink: 0; margin: -2px 0 -2px 4px; padding: 3px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: transparent; color: var(--accent-text); font: inherit; font-size: 12px; font-weight: 600; line-height: 1.2; white-space: nowrap; cursor: pointer; }
+.toast-action:hover { background: var(--bg-hover); color: var(--fg-bright); }
 
 /* ════════════════════════════════════════════
    RESPONSIVE

@@ -34,8 +34,8 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="/tokens.css">
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/tokens.css?v={{VERSION}}">
+    <link rel="stylesheet" href="/style.css?v={{VERSION}}">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
@@ -57,6 +57,9 @@
                 <div class="sidebar-subtitle">llama.cpp control panel</div>
                 <div class="sidebar-version">
                     v{{VERSION}} {{BETA_BADGE}}
+                    <button class="update-indicator hidden" id="update-indicator" type="button" onclick="openConfigModal('updates')" title="A newer release is available">
+                        <span class="badge-dot" aria-hidden="true"></span>Update
+                    </button>
                 </div>
             </div>
             <button class="btn btn-sm sidebar-close" id="sidebar-close" type="button" aria-label="Close navigation" title="Close navigation">&times;</button>
@@ -67,6 +70,11 @@
                 <span class="icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
                 Monitor
                 <span id="monitor-nav-live" class="badge badge-green nav-badge hidden" title="llama-server is running"><span class="badge-dot" aria-hidden="true"></span>Live</span>
+            </button>
+            <button class="nav-item" data-section="logs">
+                <span class="icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
+                Logs
+                <span class="nav-count" id="nav-count-logs"></span>
             </button>
 
             <div class="nav-group" role="group" aria-labelledby="nav-tune">
@@ -184,12 +192,14 @@
                     <div class="monitor-output-tools">
                         <span class="badge badge-neutral hidden" id="monitor-process-tool">llama-server</span>
                         <span class="badge badge-green hidden" id="monitor-process-state">Running</span>
+                        <span class="badge badge-dim" id="monitor-output-lines">0 lines</span>
                         <span class="monitor-sep" aria-hidden="true"></span>
+                        <button class="btn btn-sm btn-ghost" type="button" onclick="event.preventDefault(); event.stopPropagation(); switchTab('logs')">Open Logs</button>
                         <button class="btn btn-sm btn-ghost" id="btn-clear-output" type="button" onclick="clearOutput(event)">Clear</button>
                         <span class="icon icon-sm details-chevron"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
                     </div>
                 </summary>
-                <div id="log-panel" class="terminal" aria-label="llama-server output"></div>
+                <div id="log-panel" class="terminal log-panel" aria-label="llama-server output"></div>
             </details>
 
             <div class="monitor-section">
@@ -306,6 +316,23 @@
 
                 </div>
             </div>
+        </div>
+
+        <!-- ═══ LOGS ═══ -->
+        <div class="section-panel logs-page" id="section-logs" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Logs</h1>
+                    <div class="page-title-sub">Everything llama-server prints, from the most recent launch. The same stream as the Process Output card on Monitor.</div>
+                </div>
+                <div class="page-actions">
+                    <span class="badge badge-dim" id="logs-count">0 lines</span>
+                    <button class="btn btn-sm" type="button" onclick="downloadLogs()">Download</button>
+                    <button class="btn btn-sm btn-ghost" type="button" onclick="clearOutput()">Clear</button>
+                </div>
+            </div>
+            <div class="status-box error" id="logs-error" hidden></div>
+            <div id="log-panel-full" class="terminal terminal-full log-panel" aria-label="llama-server output"></div>
         </div>
 
         <!-- ═══ PRESETS ═══ -->
@@ -505,7 +532,7 @@
                 <div class="help-text" id="gpu-detected-info"></div>
             </details>
 
-            <details class="modal-section" open>
+            <details class="modal-section" id="config-updates-section" open>
                 <summary>App Updates</summary>
                 <div class="updates-toolbar">
                     <span class="help-text">Releases are fetched from GitHub. Installing swaps the running binary and restarts; llama-server is stopped first.</span>
@@ -821,7 +848,7 @@
     </div>
 </div>
 
-<script src="/theme.js"></script>
-<script src="/app.js"></script>
+<script src="/theme.js?v={{VERSION}}"></script>
+<script src="/app.js?v={{VERSION}}"></script>
 </body>
 </html>

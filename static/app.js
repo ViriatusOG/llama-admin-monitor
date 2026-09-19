@@ -1,6 +1,6 @@
 // ─── App shell: navigation + responsive drawer ────────────────────────────
 
-const SECTIONS = ['monitor', 'presets', 'bench', 'chat', 'models'];
+const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'models'];
 let activeSection = 'monitor';
 
 function switchTab(name) {
@@ -20,6 +20,7 @@ function switchTab(name) {
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
+    if (name === 'logs') { const el = document.getElementById('log-panel-full'); el.scrollTop = el.scrollHeight; }
 
     const wasOpen = document.getElementById('sidebar').classList.contains('open');
     setNavigationOpen(false);
@@ -199,9 +200,14 @@ function modalIsOpen(id) { return document.getElementById(id).classList.contains
 
 // --- Config Modal ---
 
-function openConfigModal() {
+function openConfigModal(section) {
     openModal('config-modal');
     checkAppUpdates();
+    if (section === 'updates') {
+        const details = document.getElementById('config-updates-section');
+        details.open = true;
+        setTimeout(() => details.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
+    }
 }
 function closeConfigModal() { closeModal('config-modal'); }
 
@@ -1584,20 +1590,29 @@ const TOAST_ICONS = {
     warn: '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
 };
 
-function showToast(message, type = 'error') {
+// `action` is an optional { label, onClick }; toasts with one stay longer.
+function showToast(message, type = 'error', action = null) {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
     toast.className = 'toast toast-' + type;
     toast.innerHTML = '<span class="icon icon-sm toast-icon">' + (TOAST_ICONS[type] || TOAST_ICONS.error) + '</span><span class="toast-message"></span>';
     toast.querySelector('.toast-message').textContent = message;
-    container.appendChild(toast);
-    requestAnimationFrame(() => { toast.classList.add('show'); });
     const dismiss = () => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
     };
+    if (action) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'toast-action';
+        btn.textContent = action.label;
+        btn.addEventListener('click', e => { e.stopPropagation(); dismiss(); action.onClick(); });
+        toast.appendChild(btn);
+    }
+    container.appendChild(toast);
+    requestAnimationFrame(() => { toast.classList.add('show'); });
     toast.addEventListener('click', dismiss);
-    setTimeout(dismiss, type === 'error' ? 5000 : 3500);
+    setTimeout(dismiss, action ? 9000 : type === 'error' ? 5000 : 3500);
 }
 
 // --- Presets page ---
@@ -2078,7 +2093,30 @@ function clearOutput(e) {
         e.stopPropagation();
     }
     logClearedAt = prevLogLen;
-    document.getElementById('log-panel').textContent = '';
+    document.querySelectorAll('.log-panel').forEach(el => { el.textContent = ''; });
+    setLogCounts(0);
+}
+
+function setLogCounts(shown) {
+    const label = shown + (shown === 1 ? ' line' : ' lines');
+    document.getElementById('monitor-output-lines').textContent = label;
+    document.getElementById('logs-count').textContent = label;
+    document.getElementById('nav-count-logs').textContent = shown > 0 ? String(shown) : '';
+}
+
+let lastLogs = [];
+
+function downloadLogs() {
+    const text = lastLogs.slice(logClearedAt).join('\n');
+    if (!text) { showToast('No log output to download', 'warn'); return; }
+    const blob = new Blob([text + '\n'], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'llama-server-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.log';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 function renderLogs(logs) {
@@ -2086,17 +2124,21 @@ function renderLogs(logs) {
     // The backlog shrinks when the server restarts; drop the cleared offset
     // so the new run's output is visible.
     if (logs.length < logClearedAt) logClearedAt = 0;
-    const el = document.getElementById('log-panel');
-    const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    el.textContent = logs.slice(logClearedAt).join('\n');
-    if (wasAtBottom) el.scrollTop = el.scrollHeight;
+    lastLogs = logs;
+    const text = logs.slice(logClearedAt).join('\n');
+    document.querySelectorAll('.log-panel').forEach(el => {
+        const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        el.textContent = text;
+        if (wasAtBottom) el.scrollTop = el.scrollHeight;
+    });
     prevLogLen = logs.length;
+    setLogCounts(logs.length - logClearedAt);
 }
 
 // WebSocket
 loadModelsCache();
 const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-ws.onopen = () => { wsConnected = true; renderRuntime(); };
+ws.onopen = () => { wsConnected = true; renderRuntime(); scheduleUpdateChecks(); };
 ws.onmessage = e => {
     const d = JSON.parse(e.data);
 
@@ -2112,13 +2154,16 @@ ws.onmessage = e => {
     const errBox = document.getElementById('monitor-error');
     if (d.server_error && d.server_error !== lastServerError) {
         lastServerError = d.server_error;
-        showToast(d.server_error, 'error');
+        showToast(d.server_error, 'error', { label: 'View logs', onClick: () => switchTab('logs') });
         runtimePhase = 'idle';
     } else if (!d.server_error) {
         lastServerError = null;
     }
     errBox.hidden = !d.server_error;
     if (d.server_error) errBox.textContent = d.server_error;
+    const logsErr = document.getElementById('logs-error');
+    logsErr.hidden = !d.server_error;
+    if (d.server_error) logsErr.textContent = d.server_error;
 
     renderRuntime();
 
@@ -2420,6 +2465,41 @@ async function applyAppUpdate(track, tag) {
             }
         } catch (_) { /* still restarting */ }
     }, 2000);
+}
+
+// Background check: an indicator in the sidebar and one toast per newer
+// release, dismissable per tag. Release builds only; dev builds never nag.
+const UPDATE_SEEN_KEY = 'llama_admin_monitor_update_seen';
+let updateChecksScheduled = false;
+
+async function quietUpdateCheck() {
+    try {
+        const res = await fetch('/api/app/update/check');
+        const data = await res.json();
+        if (data.error || data.current_track === 'dev' || !data.platform_asset) return;
+        const latest = data.current_track === 'beta' ? data.beta : data.stable;
+        const indicator = document.getElementById('update-indicator');
+        if (!data.update_available || !latest || !latest.asset_url) {
+            indicator.classList.add('hidden');
+            return;
+        }
+        indicator.classList.remove('hidden');
+        indicator.title = latest.tag + ' is available on the ' + data.current_track + ' track';
+        let seen = '';
+        try { seen = localStorage.getItem(UPDATE_SEEN_KEY) || ''; } catch (_) {}
+        if (seen !== latest.tag) {
+            try { localStorage.setItem(UPDATE_SEEN_KEY, latest.tag); } catch (_) {}
+            showToast('Update available: ' + latest.tag + ' (' + data.current_track + ' track)', 'success',
+                { label: 'Open updates', onClick: () => openConfigModal('updates') });
+        }
+    } catch (_) { /* offline or GitHub unreachable: try again next time */ }
+}
+
+function scheduleUpdateChecks() {
+    if (updateChecksScheduled) return;
+    updateChecksScheduled = true;
+    setTimeout(quietUpdateCheck, 3000);
+    setInterval(quietUpdateCheck, 6 * 60 * 60 * 1000);
 }
 
 // Called from the WebSocket handler with the backend's update phase.
