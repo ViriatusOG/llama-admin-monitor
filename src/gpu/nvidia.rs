@@ -9,7 +9,7 @@ impl GpuBackend for NvidiaBackend {
     fn read_metrics(&self) -> Result<BTreeMap<String, GpuMetrics>> {
         let output = std::process::Command::new("nvidia-smi")
             .args([
-                "--query-gpu=index,name,temperature.gpu,utilization.gpu,power.draw,power.limit,memory.used,memory.total,clocks.gr,clocks.mem",
+                "--query-gpu=index,name,temperature.gpu,utilization.gpu,power.draw,power.limit,memory.used,memory.total,clocks.gr,clocks.mem,pci.bus_id",
                 "--format=csv,noheader,nounits",
             ])
             .output()
@@ -61,6 +61,10 @@ pub fn parse_nvidia_csv(csv: &str) -> Result<BTreeMap<String, GpuMetrics>> {
         let vram_total = fields[7].parse::<u64>().unwrap_or(0); // MiB from nvidia-smi
         let sclk_mhz = fields[8].parse::<u32>().unwrap_or(0);
         let mclk_mhz = fields[9].parse::<u32>().unwrap_or(0);
+        let bus = fields
+            .get(10)
+            .map(|b| super::procs::normalize_bus(b))
+            .filter(|b| !b.is_empty());
 
         let card_name = unique_card_key(&metrics, name);
         metrics.insert(
@@ -77,6 +81,7 @@ pub fn parse_nvidia_csv(csv: &str) -> Result<BTreeMap<String, GpuMetrics>> {
                 vram_total,
                 sclk_mhz,
                 mclk_mhz,
+                bus,
             },
         );
     }
@@ -108,6 +113,7 @@ mod tests {
         assert_eq!(gpu0.vram_total, 24564);
         assert_eq!(gpu0.sclk_mhz, 2520);
         assert_eq!(gpu0.mclk_mhz, 10501);
+        assert_eq!(gpu0.bus.as_deref(), Some("0000:01:00.0"));
     }
 
     #[test]

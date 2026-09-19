@@ -2,6 +2,7 @@ pub mod amd_names;
 pub mod dummy;
 pub mod env;
 pub mod nvidia;
+pub mod procs;
 pub mod rocm;
 
 use anyhow::Result;
@@ -23,6 +24,8 @@ pub struct GpuMetrics {
     pub vram_total: u64,
     pub sclk_mhz: u32,
     pub mclk_mhz: u32,
+    /// PCI bus id (`0000:03:00.0`), to match processes to this card.
+    pub bus: Option<String>,
 }
 
 /// Returns a map key for `name` that is not yet present in `metrics`.
@@ -191,6 +194,7 @@ mod tests {
                             vram_total: 0,
                             sclk_mhz: 0,
                             mclk_mhz: 0,
+                            bus: None,
                         },
                     )
                 })
@@ -257,6 +261,7 @@ mod tests {
             vram_total: 0,
             sclk_mhz: 0,
             mclk_mhz: 0,
+            bus: None,
         };
         assert_eq!(unique_card_key(&metrics, "RTX 4090"), "RTX 4090");
         metrics.insert("RTX 4090".to_string(), zero.clone());

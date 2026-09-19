@@ -1064,6 +1064,122 @@ function renderVramBar(d) {
     }
 }
 
+// --- GPU activity card (nvtop-style history + processes) ---
+
+const ACTIVITY_SAMPLES = 600;            // 5 min at the 500 ms WebSocket cadence
+const activityHistory = new Map();       // card name -> { util: [], vram: [] }
+let activityGraphKeys = '';
+
+function pushActivityHistory(gpuList) {
+    const names = new Set(gpuList.map(([n]) => n));
+    activityHistory.forEach((_, k) => { if (!names.has(k)) activityHistory.delete(k); });
+    gpuList.forEach(([name, m]) => {
+        let h = activityHistory.get(name);
+        if (!h) { h = { util: [], vram: [] }; activityHistory.set(name, h); }
+        h.util.push(Math.max(0, Math.min(100, m.load || 0)));
+        h.vram.push(m.vram_total > 0 ? Math.min(100, (m.vram_used / m.vram_total) * 100) : 0);
+        if (h.util.length > ACTIVITY_SAMPLES) { h.util.shift(); h.vram.shift(); }
+    });
+}
+
+function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
+}
+
+function drawActivityGraph(canvas, h, colorUtil, colorVram) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, ht = canvas.clientHeight;
+    if (!w || !ht) return;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(ht * dpr);
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, ht);
+    // Gridlines at 25/50/75 %.
+    ctx.strokeStyle = cssVar('--border');
+    ctx.lineWidth = 1;
+    [0.25, 0.5, 0.75].forEach(f => {
+        const y = Math.round(ht - f * ht) + 0.5;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    });
+    const series = (values, color, fill) => {
+        if (values.length < 2) return;
+        const step = w / (ACTIVITY_SAMPLES - 1);
+        const x0 = w - (values.length - 1) * step;
+        ctx.beginPath();
+        values.forEach((v, i) => {
+            const x = x0 + i * step, y = ht - (v / 100) * (ht - 2) - 1;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        if (fill) {
+            ctx.save();
+            ctx.lineTo(w, ht); ctx.lineTo(x0, ht); ctx.closePath();
+            ctx.globalAlpha = 0.18; ctx.fillStyle = color; ctx.fill();
+            ctx.restore();
+            ctx.beginPath();
+            values.forEach((v, i) => {
+                const x = x0 + i * step, y = ht - (v / 100) * (ht - 2) - 1;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+        }
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+    };
+    series(h.vram, colorVram, false);
+    series(h.util, colorUtil, true);
+}
+
+function renderActivityCard(gpuList, procs) {
+    const graphs = document.getElementById('activity-graphs');
+    if (!graphs) return;
+    pushActivityHistory(gpuList);
+    const keys = gpuList.map(([n]) => n).join('|');
+    if (keys !== activityGraphKeys) {
+        activityGraphKeys = keys;
+        graphs.innerHTML = gpuList.length === 0
+            ? '<div class="activity-empty">No GPU telemetry.</div>'
+            : gpuList.map(([name], i) =>
+                '<div class="activity-graph" data-gpu="' + i + '">' +
+                    '<div class="activity-graph-head"><span class="activity-graph-name" title="' + escapeHtml(name) + '">GPU ' + i + ' \u00b7 ' + escapeHtml(shortCardName(name)) + '</span>' +
+                    '<span class="activity-graph-legend"><span><span class="activity-swatch act-util"></span>util <b class="act-util-v">\u2014</b></span><span><span class="activity-swatch act-vram"></span>vram <b class="act-vram-v">\u2014</b></span></span></div>' +
+                    '<canvas class="activity-canvas"></canvas>' +
+                '</div>').join('');
+    }
+    const vramColor = cssVar('--vram-context');
+    gpuList.forEach(([name, m], i) => {
+        const el = graphs.querySelector('[data-gpu="' + i + '"]');
+        if (!el) return;
+        const color = cssVar(vendorInfo(name).color.replace(/^var\((.*)\)$/, '$1'));
+        el.querySelector('.act-util').style.background = color;
+        el.querySelector('.act-vram').style.background = vramColor;
+        el.querySelector('.act-util-v').textContent = Math.round(m.load || 0) + '%';
+        el.querySelector('.act-vram-v').textContent = m.vram_total > 0 ? Math.round((m.vram_used / m.vram_total) * 100) + '%' : '\u2014';
+        drawActivityGraph(el.querySelector('canvas'), activityHistory.get(name) || { util: [], vram: [] }, color, vramColor);
+    });
+
+    // Processes: match to a card by PCI bus id when the metrics carry one.
+    const byBus = new Map();
+    gpuList.forEach(([name, m], i) => { if (m.bus) byBus.set(m.bus, 'GPU ' + i + ' \u00b7 ' + shortCardName(name)); });
+    const list = procs || [];
+    document.getElementById('activity-proc-count').textContent = list.length + (list.length === 1 ? ' process' : ' processes');
+    const host = document.getElementById('activity-procs');
+    if (list.length === 0) {
+        host.innerHTML = '<div class="activity-empty">No processes are using the GPUs' + (gpuList.length ? ' (only this user\'s processes are visible unless the monitor runs as root)' : '') + '.</div>';
+        return;
+    }
+    host.innerHTML = '<table><thead><tr><th>PID</th><th>Process</th><th>GPU</th><th class="num">VRAM</th><th class="num">GPU busy</th></tr></thead><tbody>' +
+        list.map(pr => {
+            const gpu = (pr.bus && byBus.get(pr.bus)) || (pr.vendor || '') + (pr.bus ? ' ' + pr.bus : '');
+            const busy = pr.busy_percent != null ? Math.round(pr.busy_percent) : null;
+            return '<tr><td class="num">' + pr.pid + '</td>' +
+                '<td class="name" title="' + escapeHtml(pr.name) + '">' + escapeHtml(pr.name) + '</td>' +
+                '<td class="gpu" title="' + escapeHtml(pr.bus || '') + '">' + escapeHtml(gpu) + '</td>' +
+                '<td class="num">' + fmtBytes(pr.vram_bytes) + '</td>' +
+                '<td class="num">' + (busy == null ? '\u2014' : busy + '%<span class="activity-mini"><span style="width:' + busy + '%"></span></span>') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+}
+
 // --- GPU cards (one per device) ---
 
 const GPU_ICON = '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="9" cy="12" r="3"/><line x1="15" y1="10" x2="18" y2="10"/><line x1="15" y1="14" x2="18" y2="14"/><line x1="6" y1="18" x2="6" y2="21"/><line x1="10" y1="18" x2="10" y2="21"/></svg>';
@@ -2509,6 +2625,7 @@ ws.onmessage = e => {
     usedVramMb = gpuList.reduce((sum, [, m]) => sum + (m.vram_used || 0), 0);
     renderVramBar(d);
     renderGpuCards(gpuList);
+    renderActivityCard(gpuList, d.gpu_processes);
     renderSystemCards(d.system);
     renderUpdatePhase(d.app_update || null);
     renderInstallProgress(d.build_install || null);

@@ -31,6 +31,7 @@ Same dashboard in the **Mint** light theme:
 - **Inference card** — prompt/generation speed, slot status and KV-cache occupancy (with a bar that turns amber at 80 % and red at 95 %), from llama-server's Prometheus endpoint
 - **VRAM usage card** — one segmented bar across every GPU, coloured per vendor (AMD, NVIDIA, Intel) with an estimated context/KV segment and free space, labelled in GB
 - **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together. AMD cards list all three sensors rocm-smi exposes — **Hotspot** (junction, the value the card throttles on), **Edge** and **Memory** — with thresholds suited to each; NVIDIA cards show the single sensor `nvidia-smi` reports
+- **GPU Activity card** — nvtop in a card: utilisation and VRAM graphs per GPU over the last five minutes, plus the processes using each GPU with their VRAM and busy share (from `nvidia-smi --query-compute-apps` and the kernel's DRM fdinfo accounting; processes of other users need the monitor to run as root)
 - **CPU, Memory and Disk cards** — per-core utilisation grid and CPU model, load average, RAM and swap, populated DIMM slots with type and speed (via `dmidecode`, see below), disk read/write throughput and free space on the models volume, plus the drive's model, temperature and SMART health/wear (via `smartctl`, see below)
 - **Arrange the dashboard** — drag cards by their grip (or move them with the arrow keys) and hide the ones you don't need; the layout is remembered per browser
 
@@ -294,6 +295,7 @@ src/
     mod.rs             -- GpuMetrics, GpuBackend trait, multi-vendor detection
     rocm.rs            -- AMD via rocm-smi JSON
     nvidia.rs          -- NVIDIA via nvidia-smi CSV
+    procs.rs           -- Processes per GPU (nvidia-smi compute-apps, DRM fdinfo)
     env.rs             -- GPU environment config, architecture table
     dummy.rs           -- No-op backend for headless/testing
   llama/

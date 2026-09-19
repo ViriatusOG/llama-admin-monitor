@@ -329,6 +329,26 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
    squeezed ones. */
 .monitor-metrics-grid > .monitor-system-card, .monitor-metrics-grid > .monitor-gpu-card, .monitor-metrics-grid > .monitor-vram-card, .monitor-metrics-grid > .monitor-inference-card { flex: 1 1 320px; max-width: 420px; }
 .monitor-metrics-grid .monitor-metric-row .monitor-metric-reading { white-space: nowrap; }
+/* nvtop-style card: two card widths, graphs per GPU and a process table. */
+.monitor-metrics-grid > .monitor-activity-card { flex: 2 1 660px; max-width: 856px; }
+.activity-graphs { display: grid; gap: var(--space-3); }
+.activity-graph-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: 4px; }
+.activity-graph-name { font-size: 12px; font-weight: 600; color: var(--fg-bright); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-graph-legend { display: flex; gap: var(--space-3); font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted); white-space: nowrap; }
+.activity-graph-legend b { font-weight: 600; color: var(--fg-bright); }
+.activity-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.activity-canvas { display: block; width: 100%; height: 72px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--inset-xs); }
+.activity-procs { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.activity-procs table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.activity-procs th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--fg-faint); padding: 2px 6px 6px 0; }
+.activity-procs td { padding: 3px 6px 3px 0; border-top: 1px solid var(--border); color: var(--fg); vertical-align: middle; }
+.activity-procs td.num, .activity-procs th.num { text-align: right; font-family: var(--mono); padding-right: 12px; white-space: nowrap; }
+.activity-procs td:last-child, .activity-procs th:last-child { padding-right: 0; }
+.activity-procs td.name { font-weight: 600; color: var(--fg-bright); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-procs td.gpu { color: var(--fg-muted); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.activity-procs .activity-mini { display: inline-block; width: 60px; height: 5px; border-radius: 3px; background: var(--bg-raised); border: 1px solid var(--border); vertical-align: middle; margin-left: 6px; overflow: hidden; }
+.activity-procs .activity-mini > span { display: block; height: 100%; background: var(--accent); }
+.activity-empty { color: var(--fg-muted); font-size: 12px; padding: var(--space-2) 0; }
 .monitor-metrics-grid .monitor-metric-row .monitor-metric-label { min-width: 0; }
 /* Monitor cards keep their tools on the title line; a long device name
    wraps inside its own column instead of pushing the tools down. */

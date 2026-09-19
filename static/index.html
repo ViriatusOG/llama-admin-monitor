@@ -253,6 +253,18 @@
                         </div>
                     </div>
 
+                    <div class="card monitor-activity-card" data-monitor-key="activity" data-monitor-label="GPU Activity">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-kicker">GPU activity &middot; last 5 min</div>
+                                <div class="card-title">Utilisation, memory and processes</div>
+                            </div>
+                            <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move GPU Activity card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="activity" aria-label="Hide GPU Activity card">Hide</button><span class="badge badge-neutral" id="activity-proc-count">&mdash;</span></div>
+                        </div>
+                        <div class="activity-graphs" id="activity-graphs"></div>
+                        <div class="activity-procs" id="activity-procs"></div>
+                    </div>
+
                     <div class="card monitor-vram-card" data-monitor-key="vram" data-monitor-label="GPU Memory Pool">
                         <div class="card-header">
                             <div>

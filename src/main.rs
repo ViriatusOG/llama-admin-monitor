@@ -99,9 +99,17 @@ async fn main() -> Result<()> {
     let backend = gpu::detect_backend(&app_config.gpu_backend);
     {
         let gpu = state.gpu_metrics.clone();
+        let procs = state.gpu_processes.clone();
         thread::spawn(move || {
             let mut failing = false;
+            let mut probe = gpu::procs::ProcessProbe::default();
+            let mut tick: u32 = 0;
             loop {
+                // Process accounting walks /proc; every 2 s is plenty.
+                if cfg!(target_os = "linux") && tick % 4 == 0 {
+                    *procs.lock().unwrap() = probe.sample();
+                }
+                tick = tick.wrapping_add(1);
                 match backend.read_metrics() {
                     Ok(m) => {
                         if failing {

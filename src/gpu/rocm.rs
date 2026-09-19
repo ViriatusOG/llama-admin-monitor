@@ -111,6 +111,11 @@ pub fn parse_rocm_json(json: &serde_json::Value) -> Result<BTreeMap<String, GpuM
                 .unwrap_or(0)
         };
 
+        let bus = card
+            .get("PCI Bus")
+            .and_then(|v| v.as_str())
+            .map(|b| super::procs::normalize_bus(b))
+            .filter(|b| !b.is_empty());
         let display_name = amd_display_name(card).unwrap_or_else(|| card_name.clone());
         let display_name = unique_card_key(&metrics, &display_name);
         let sclk_mhz = parse_clock("sclk clock speed:");
@@ -130,6 +135,7 @@ pub fn parse_rocm_json(json: &serde_json::Value) -> Result<BTreeMap<String, GpuM
                 vram_total,
                 sclk_mhz,
                 mclk_mhz,
+                bus,
             },
         );
     }
