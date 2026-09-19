@@ -67,6 +67,9 @@ pub fn parse_nvidia_csv(csv: &str) -> Result<BTreeMap<String, GpuMetrics>> {
             card_name,
             GpuMetrics {
                 temp,
+                temp_edge: None,
+                temp_junction: None,
+                temp_memory: None,
                 load,
                 power_consumption,
                 power_limit,

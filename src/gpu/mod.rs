@@ -9,7 +9,12 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GpuMetrics {
+    /// Headline temperature: junction (hotspot) when the card reports one,
+    /// otherwise edge. The individual sensors follow when known.
     pub temp: f32,
+    pub temp_edge: Option<f32>,
+    pub temp_junction: Option<f32>,
+    pub temp_memory: Option<f32>,
     pub load: u32,
     pub power_consumption: f32,
     pub power_limit: u32,
@@ -175,6 +180,9 @@ mod tests {
                         c.to_string(),
                         GpuMetrics {
                             temp: 0.0,
+                            temp_edge: None,
+                            temp_junction: None,
+                            temp_memory: None,
                             load: 0,
                             power_consumption: 0.0,
                             power_limit: 0,
@@ -238,6 +246,9 @@ mod tests {
         let mut metrics = BTreeMap::new();
         let zero = GpuMetrics {
             temp: 0.0,
+            temp_edge: None,
+            temp_junction: None,
+            temp_memory: None,
             load: 0,
             power_consumption: 0.0,
             power_limit: 0,

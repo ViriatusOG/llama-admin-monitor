@@ -11,7 +11,11 @@ Backwards compatibility is preserved unless explicitly noted.
 - **Install page** (sidebar → Library → Install): installs prebuilt llama.cpp releases straight from ggml-org's GitHub releases, one directory per backend and version, no compiler needed. Offers Vulkan, CUDA 12.8, CUDA 13.3 (both with the CUDA runtime libraries bundled), ROCm 10.0 and CPU on Linux x64; Vulkan/CUDA/CPU on Linux arm64; Metal on Apple Silicon. Each install is smoke-tested with `--list-devices` and lists the devices it found. Builds can be removed, or set as the binary in Settings with one click.
 - Presets choose a build under GPU distribution → Build (installed builds, the configured binary, or the legacy `build-cuda` tree); the Devices picker and the Benchmark page follow that choice.
 
+### Added (GPU cards)
+- AMD GPU cards show all three temperature sensors rocm-smi reports: **Hotspot** (junction, the headline value and what the card throttles on), **Edge** and **Memory**. Hotspot and memory use looser warning thresholds (95/105 C) than edge and NVIDIA's single sensor (80/90 C), matching what those sensors normally run at.
+
 ### Fixed
+- AMD cards that rocm-smi only knows as "AMD Radeon Graphics" (its id database lags new hardware; the Radeon AI PRO R9700 is one) are now named properly: the monitor looks the PCI device id up in a built-in table (RX 9070 XT / 9070 / 9060 XT, AI PRO R9700), then asks `lspci`, and as a last resort tags the generic name with the gfx target and device id so two unknown cards are still distinguishable.
 - GPU monitoring no longer floods the log when a vendor tool is installed but has no card behind it (e.g. `nvidia-smi` left over after swapping the NVIDIA card for an AMD one). In auto mode each tool is probed once at startup and skipped, with a single warning, if it fails or reports no GPUs; a tool that fails later is logged once per outage and once on recovery, not on every poll. `nvidia-smi`'s actual error text (it prints it on stdout) is now included.
 - The preset editor only offers the legacy "Separate CUDA build (build-cuda/bin)" option to presets already using it; new CUDA setups come from the Install page.
 - The preset's Build choice was never sent with the launch request, so it had no effect; it is now.

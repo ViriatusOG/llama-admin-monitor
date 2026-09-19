@@ -937,6 +937,11 @@ async function loadModelsCache() {
 
 // --- GPU vendor detection (colours are theme tokens, see tokens.css) ---
 
+function setTemp(el, cls, value, [warn, bad]) {
+    el.textContent = Math.round(value) + ' \u00b0C';
+    el.className = 'monitor-metric-reading ' + cls + (value >= bad ? ' is-bad' : value >= warn ? ' is-warn' : '');
+}
+
 function vendorInfo(cardName) {
     const n = cardName.toLowerCase();
     if (n.includes('amd') || n.includes('radeon')) return { key: 'amd', color: 'var(--vendor-amd)', label: 'AMD' };
@@ -1087,7 +1092,9 @@ function renderGpuCards(gpuList) {
                     '<div class="progress-bar"><div class="progress-fill gpu-vram-bar"></div></div>' +
                 '</div>' +
                 '<div class="monitor-gpu-meta">' +
-                    '<div class="monitor-metric-row"><span class="monitor-metric-label">Temperature</span><span class="monitor-metric-reading gpu-temp">\u2014</span></div>' +
+                    '<div class="monitor-metric-row"><span class="monitor-metric-label gpu-temp-label">Temperature</span><span class="monitor-metric-reading gpu-temp">\u2014</span></div>' +
+                    '<div class="monitor-metric-row gpu-temp-edge-row" hidden><span class="monitor-metric-label">Edge temp</span><span class="monitor-metric-reading gpu-temp-edge">\u2014</span></div>' +
+                    '<div class="monitor-metric-row gpu-temp-mem-row" hidden><span class="monitor-metric-label">Memory temp</span><span class="monitor-metric-reading gpu-temp-mem">\u2014</span></div>' +
                     '<div class="monitor-metric-row"><span class="monitor-metric-label">Power</span><span class="monitor-metric-reading gpu-power">\u2014</span></div>' +
                     '<div class="monitor-metric-row"><span class="monitor-metric-label">Core clock</span><span class="monitor-metric-reading gpu-sclk">\u2014</span></div>' +
                     '<div class="monitor-metric-row"><span class="monitor-metric-label">Memory clock</span><span class="monitor-metric-reading gpu-mclk">\u2014</span></div>' +
@@ -1120,9 +1127,19 @@ function renderGpuCards(gpuList) {
         vramBar.style.width = vpct + '%';
         vramBar.className = barClass(vpct) + ' gpu-vram-bar';
 
-        const tempEl = el.querySelector('.gpu-temp');
-        tempEl.textContent = Math.round(m.temp) + ' \u00b0C';
-        tempEl.className = 'monitor-metric-reading gpu-temp' + (m.temp >= 90 ? ' is-bad' : m.temp >= 80 ? ' is-warn' : '');
+        // AMD cards report edge, junction (hotspot) and memory sensors; the
+        // headline value is junction when present. Junction and memory run
+        // hotter by design (RDNA throttles around 110 C), so they get looser
+        // thresholds than edge / NVIDIA's single sensor.
+        const hasJunction = m.temp_junction != null;
+        el.querySelector('.gpu-temp-label').textContent = hasJunction ? 'Hotspot temp' : 'Temperature';
+        setTemp(el.querySelector('.gpu-temp'), 'gpu-temp', m.temp, hasJunction ? [95, 105] : [80, 90]);
+        const edgeRow = el.querySelector('.gpu-temp-edge-row');
+        edgeRow.hidden = !(hasJunction && m.temp_edge != null);
+        if (!edgeRow.hidden) setTemp(el.querySelector('.gpu-temp-edge'), 'gpu-temp-edge', m.temp_edge, [80, 90]);
+        const memRow = el.querySelector('.gpu-temp-mem-row');
+        memRow.hidden = m.temp_memory == null;
+        if (!memRow.hidden) setTemp(el.querySelector('.gpu-temp-mem'), 'gpu-temp-mem', m.temp_memory, [95, 105]);
 
         const capped = m.power_consumption >= m.power_limit && m.power_limit > 0;
         const powerEl = el.querySelector('.gpu-power');
