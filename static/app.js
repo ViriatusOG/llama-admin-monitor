@@ -2431,6 +2431,15 @@ function renderRuntime() {
     model.textContent = serverRunning ? (modelName || 'Model unavailable') : (modelName ? 'Next: ' + modelName : 'No server running');
     model.title = modelPath;
     document.getElementById('sidebar-runtime-endpoint').textContent = serverRunning ? 'Endpoint: ' + location.hostname + ':' + port : '';
+    // The OpenAI-compatible proxy is always on the monitor's own address
+    // and follows whichever model is loaded, so clients never need the
+    // llama-server port.
+    const apiUrl = location.origin + '/v1';
+    const apiEl = document.getElementById('sidebar-runtime-api-url');
+    if (apiEl.textContent !== apiUrl) {
+        apiEl.textContent = apiUrl;
+        document.getElementById('sidebar-runtime-api-copy').onclick = () => copyText(apiUrl, 'API URL');
+    }
 
     // Launch button
     const toggleBtn = document.getElementById('btn-toggle');
@@ -2453,12 +2462,7 @@ function renderRuntime() {
     if (serverRunning) details.push('llama-server', 'Endpoint: ' + location.hostname + ':' + port);
     else details.push('Port ' + port);
     if (activePreset) details.push('Preset: ' + activePreset.name);
-    // The OpenAI-compatible proxy is always on the monitor's own address
-    // and follows whichever model is loaded, so clients never need the
-    // llama-server port.
-    const apiUrl = location.origin + '/v1';
-    details.push('<span class="runtime-api" title="OpenAI-compatible API, proxied to the running llama-server. Point SillyTavern, Open WebUI or the OpenAI SDKs here; any API key is accepted.">OpenAI API: <span class="runtime-api-url">' + escapeHtml(apiUrl) + '</span> <button class="btn btn-xs btn-ghost" type="button" onclick="copyText(\'' + jsStr(apiUrl) + '\', \'API URL\')" aria-label="Copy API URL">Copy</button></span>');
-    document.getElementById('monitor-runtime-details').innerHTML = details.map(d => d.startsWith('<span class="runtime-api"') ? d : '<span>' + escapeHtml(d) + '</span>').join('');
+    document.getElementById('monitor-runtime-details').innerHTML = details.map(d => '<span>' + escapeHtml(d) + '</span>').join('');
 
     document.getElementById('monitor-nav-live').classList.toggle('hidden', !serverRunning);
     document.getElementById('monitor-process-tool').classList.toggle('hidden', !serverRunning);
