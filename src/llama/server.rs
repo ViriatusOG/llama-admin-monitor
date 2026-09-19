@@ -442,11 +442,7 @@ fn strip_log_prefix(line: &str) -> String {
     }
     // timestamp, level letter, module tag, then the message
     let rest: Vec<&str> = parts.collect();
-    let skip = rest
-        .iter()
-        .take(2)
-        .take_while(|w| w.len() <= 3)
-        .count();
+    let skip = rest.iter().take(2).take_while(|w| w.len() <= 3).count();
     rest[skip..].join(" ")
 }
 
