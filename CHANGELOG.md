@@ -8,6 +8,13 @@ Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
 ### Added
+- **Install page** (sidebar → Library → Install): installs prebuilt llama.cpp releases straight from ggml-org's GitHub releases, one directory per backend and version, no compiler needed. Offers Vulkan, CUDA 12.8, CUDA 13.3 (both with the CUDA runtime libraries bundled), ROCm 10.0 and CPU on Linux x64; Vulkan/CUDA/CPU on Linux arm64; Metal on Apple Silicon. Each install is smoke-tested with `--list-devices` and lists the devices it found. Builds can be removed, or set as the binary in Settings with one click.
+- Presets choose a build under GPU distribution → Build (installed builds, the configured binary, or the legacy `build-cuda` tree); the Devices picker and the Benchmark page follow that choice.
+
+### Fixed
+- The preset's Build choice was never sent with the launch request, so it had no effect; it is now.
+
+### Added (continued)
 - The preset's Backend field is now labelled **Build** and explained: it picks the configured binary or a separate `build-cuda` tree. The Devices picker lists the devices of whichever build is selected. A single llama.cpp build with both `-DGGML_CUDA=ON -DGGML_VULKAN=ON` needs no switching: pick `CUDA0` under Devices.
 - Preset editor gains a **Devices** picker (GPU distribution section) listing what `llama-server --list-devices` reports; ticking one card passes `--device` so a model stays off the others. Shown as a `dev` chip on the Presets page.
 - Models page pairs projector files with their models (same Hugging Face repo, or the model's name in the projector's filename): a vision model lists its `mmproj`, a projector lists the models it belongs to, and unmatched projectors say so. Picking such a model in the preset editor fills the projector field automatically.

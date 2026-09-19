@@ -89,6 +89,8 @@ pub struct AppState {
     pub system_stats: Arc<Mutex<SystemStats>>,
     /// Progress of an in-app update in flight (see update.rs), or None.
     pub update_phase: Arc<Mutex<Option<String>>>,
+    /// A llama.cpp build being installed from the Install page, if any.
+    pub build_install: Arc<Mutex<Option<crate::llama::builds::InstallProgress>>>,
 }
 
 impl AppState {
@@ -127,6 +129,7 @@ impl AppState {
             bench_progress: Arc::new(Mutex::new(BenchProgress::default())),
             system_stats: Arc::new(Mutex::new(SystemStats::default())),
             update_phase: Arc::new(Mutex::new(None)),
+            build_install: Arc::new(Mutex::new(None)),
         }
     }
 

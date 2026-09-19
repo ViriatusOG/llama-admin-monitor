@@ -40,6 +40,9 @@ Same dashboard in the **Mint** light theme:
 - **Preset editor** — collapsible sections covering every llama.cpp parameter; persisted to disk
 - **Failure detection** — if llama-server exits on its own (a model that won't fit, a bad flag) the dashboard resets to a stopped state and surfaces the error on the Monitor page
 
+### llama.cpp builds
+- **Install page** — installs prebuilt llama.cpp releases from ggml-org's GitHub releases, one per backend (Vulkan, CUDA 12.8 / 13.3 with the runtime bundled, ROCm 10.0, CPU; Metal on Apple Silicon), into `~/.local/share/llama-admin-monitor/llama.cpp/<backend>-<tag>/`. Each install runs `--list-devices` and shows what it can see. Presets pick a build under *GPU distribution → Build*, so an NVIDIA-only preset can use the CUDA build while a multi-GPU preset uses Vulkan. A build can also be made the default binary in Settings with one click. Upstream builds are single-backend; mixing CUDA and Vulkan devices in one process still needs a self-compiled binary with both enabled.
+
 ### Model management
 - **Models page** — every `.gguf` in your models directory with quantisation, size, VRAM fit, source repo, download date and the repo's last-updated date on Hugging Face; sortable columns
 - **Hugging Face downloads** — search repos, browse their `.gguf` files with sizes and a VRAM-fit check *before* downloading, then download with a live progress bar that keeps going if you close the dialog
@@ -246,6 +249,11 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `GET` | `/api/gpu-env` | Get GPU environment config |
 | `PUT` | `/api/gpu-env` | Save GPU environment config |
 | `ANY` | `/v1/*` | Transparent proxy to the running llama-server's OpenAI-compatible API |
+| `GET` | `/api/builds/catalog` | Upstream llama.cpp releases and the backends available for this platform |
+| `GET` | `/api/builds/installed` | Installed builds with the devices each can see |
+| `POST` | `/api/builds/install` | Install `{"backend", "tag"}`; progress arrives via the WebSocket |
+| `POST` | `/api/builds/remove` | Remove an installed build by id |
+| `POST` | `/api/builds/use` | Point Settings at an installed build |
 | `GET` | `/api/app/logs?after=N` | The monitor's own event log (entries newer than sequence N) |
 | `GET` | `/api/app/update/check` | Running version/track and the latest stable and beta releases |
 | `POST` | `/api/app/update/apply` | Install `{"track": "main"\|"beta"}` and restart; progress arrives via the WebSocket |
@@ -269,6 +277,7 @@ src/
     server.rs          -- Subprocess management, exit detection
     poller.rs          -- Async polling loop for /health, /metrics, /slots
     bench.rs           -- llama-bench sweep runner with cancellation
+    builds.rs          -- Prebuilt llama.cpp installs from ggml-org releases
   system/
     mod.rs             -- Host CPU / memory / disk sampler (/proc, df, dmidecode)
   update.rs            -- Release-track updater: GitHub Releases, verify, swap, re-exec

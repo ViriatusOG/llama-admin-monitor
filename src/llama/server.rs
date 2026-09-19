@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
@@ -108,17 +108,18 @@ pub async fn start_server(
     // default "build" one, since llama.cpp can only target one GPU
     // backend per build.
     let use_cuda = config.backend == "cuda";
-    let binary_path = binary_for_backend(app_config, &config.backend)?;
+    let target = launch_target(app_config, &config.backend)?;
+    let binary_path = target.binary.clone();
 
-    if !app_config.llama_server_cwd.is_dir() {
+    if !target.cwd.is_dir() {
         anyhow::bail!(
             "working directory {} does not exist or is not a directory. Fix it in Settings.",
-            app_config.llama_server_cwd.display()
+            target.cwd.display()
         );
     }
 
     let mut cmd = TokioCommand::new(&binary_path);
-    cmd.current_dir(&app_config.llama_server_cwd);
+    cmd.current_dir(&target.cwd);
 
     // Set GPU-specific environment variables
     let gpu_env = state.gpu_env.lock().unwrap().clone();
@@ -262,7 +263,7 @@ pub async fn start_server(
         anyhow::anyhow!(
             "cannot launch {} (in {}): {e}",
             binary_path.display(),
-            app_config.llama_server_cwd.display()
+            target.cwd.display()
         )
     })?;
     crate::applog::info(format!(
@@ -452,8 +453,34 @@ fn strip_log_prefix(line: &str) -> String {
 /// both GGML_CUDA and GGML_VULKAN needs no switching: its device list
 /// carries CUDA0 next to the Vulkan devices.
 pub fn binary_for_backend(app_config: &AppConfig, backend: &str) -> Result<PathBuf> {
+    Ok(launch_target(app_config, backend)?.binary)
+}
+
+/// Where a launch runs: the binary and its working directory. A preset's
+/// `backend` is one of: "" / "vulkan" (the configured binary and cwd),
+/// "cuda" (legacy sibling build-cuda tree), or "build:<id>" for a build
+/// installed from the Install page, which runs inside its own directory
+/// so its bundled libraries resolve.
+pub struct LaunchTarget {
+    pub binary: PathBuf,
+    pub cwd: PathBuf,
+}
+
+pub fn launch_target(app_config: &AppConfig, backend: &str) -> Result<LaunchTarget> {
+    if let Some(id) = backend.strip_prefix("build:") {
+        let build = crate::llama::builds::installed_build(id).with_context(|| {
+            format!("the preset uses llama.cpp build {id}, which is not installed (see Install)")
+        })?;
+        return Ok(LaunchTarget {
+            binary: build.server_path,
+            cwd: build.dir,
+        });
+    }
     if backend != "cuda" {
-        return Ok(app_config.llama_server_path.clone());
+        return Ok(LaunchTarget {
+            binary: app_config.llama_server_path.clone(),
+            cwd: app_config.llama_server_cwd.clone(),
+        });
     }
     let s = app_config.llama_server_path.display().to_string();
     let swapped = s.replace("/build/bin/", "/build-cuda/bin/");
@@ -466,7 +493,10 @@ pub fn binary_for_backend(app_config: &AppConfig, backend: &str) -> Result<PathB
             p.display()
         );
     }
-    Ok(p)
+    Ok(LaunchTarget {
+        binary: p,
+        cwd: app_config.llama_server_cwd.clone(),
+    })
 }
 
 /// One offload device as printed by `llama-server --list-devices`.
@@ -517,14 +547,15 @@ pub async fn list_devices(
     app_config: &AppConfig,
     backend: &str,
 ) -> Result<Vec<GgmlDevice>> {
-    let server_path = binary_for_backend(app_config, backend)?;
+    let target = launch_target(app_config, backend)?;
+    let server_path = target.binary;
     if server_path.components().count() > 1 {
         check_executable(&server_path)?;
     }
     let mut cmd = TokioCommand::new(&server_path);
     cmd.arg("--list-devices");
-    if app_config.llama_server_cwd.is_dir() {
-        cmd.current_dir(&app_config.llama_server_cwd);
+    if target.cwd.is_dir() {
+        cmd.current_dir(&target.cwd);
     }
     let gpu_env = state.gpu_env.lock().unwrap().clone();
     let cwd = app_config.llama_server_cwd.display().to_string();

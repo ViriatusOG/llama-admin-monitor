@@ -40,6 +40,7 @@ pub fn ws_route(
                             let system = state.system_stats.lock().unwrap().clone();
                             let app_update = state.update_phase.lock().unwrap().clone();
                             let app_log_seq = crate::applog::latest_seq();
+                            let build_install = state.build_install.lock().unwrap().clone();
                             serde_json::json!({
                                 "gpu": gpu,
                                 "llama": llama,
@@ -52,6 +53,7 @@ pub fn ws_route(
                                 "system": system,
                                 "app_update": app_update,
                                 "app_log_seq": app_log_seq,
+                                "build_install": build_install,
                             })
                             .to_string()
                         };

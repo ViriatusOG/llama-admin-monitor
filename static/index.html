@@ -107,6 +107,11 @@
                     Models
                     <span class="nav-count" id="nav-count-models"></span>
                 </button>
+                <button class="nav-item" data-section="install">
+                    <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+                    Install
+                    <span class="nav-count" id="nav-count-install"></span>
+                </button>
             </div>
 
         </nav>
@@ -483,6 +488,50 @@
 
 
 
+        <!-- ═══ INSTALL ═══ -->
+        <div class="section-panel" id="section-install" hidden>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Install llama.cpp</h1>
+                    <div class="page-title-sub">Prebuilt llama.cpp releases from ggml-org, one per GPU backend. No compiler needed. Presets choose a build under GPU distribution → Build.</div>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-sm" type="button" onclick="loadInstallPage(true)">Refresh</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header card-header-tight">
+                    <h3>Installed builds</h3>
+                    <span class="help-text mono" id="builds-root"></span>
+                </div>
+                <div id="builds-installed" class="builds-list"></div>
+            </div>
+
+            <div class="card monitor-section">
+                <h3>Install a build</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="install-release">llama.cpp release</label>
+                        <select id="install-release"><option value="">Loading…</option></select>
+                    </div>
+                </div>
+                <div class="form-label">Backend</div>
+                <div id="install-backends" class="backend-picker"></div>
+                <div class="status-box info" id="install-note" hidden></div>
+                <div class="install-actions">
+                    <button class="btn btn-primary" id="btn-install-build" type="button" onclick="startInstall()">Install</button>
+                    <span class="help-text">Downloads run in the background; the Install entry in the sidebar shows progress.</span>
+                </div>
+                <div class="status-box info updates-installing" id="install-progress" hidden>
+                    <strong id="install-progress-title">Installing</strong>
+                    <div id="install-progress-phase"></div>
+                    <div class="progress-bar"><div class="progress-fill" id="install-progress-bar"></div></div>
+                    <div class="help-text" id="install-progress-bytes"></div>
+                </div>
+            </div>
+        </div>
+
     </main>
 </div>
 
@@ -759,7 +808,6 @@
                 <label class="modal-field" title="Which llama-server build to launch. 'Configured binary' is the path in Settings. 'Separate CUDA build' expects a CUDA-only build in a sibling build-cuda/bin directory and disables tensor split. A binary compiled with both -DGGML_CUDA=ON and -DGGML_VULKAN=ON needs no switching: pick CUDA0 under Devices.">Build
                     <select id="modal-backend" onchange="onBackendChange()">
                         <option value="vulkan">Configured binary (Settings)</option>
-                        <option value="cuda">Separate CUDA build (build-cuda/bin)</option>
                     </select>
                 </label>
                 <div class="modal-row">

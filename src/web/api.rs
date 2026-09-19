@@ -40,12 +40,14 @@ pub fn api_routes(
     let app_update_check = api_app_update_check();
     let app_logs = api_app_logs();
     let devices = api_devices(state.clone(), app_config.clone());
+    let builds = api_builds(state.clone(), app_config.clone());
     let app_update_apply = api_app_update_apply(state);
     // Boxed so the outer .or() chain stays shallow enough for the compiler.
     let app = app_update_check
         .or(app_update_apply)
         .or(app_logs)
         .or(devices)
+        .or(builds)
         .boxed();
 
     start
@@ -820,7 +822,24 @@ fn api_bench_run(
                     .and_then(|v| v.as_i64())
                     .unwrap_or(999) as i32;
 
-                let server_path = {
+                // llama-bench sits beside llama-server in whichever build the
+                // active preset uses (an installed build, or the configured one).
+                let backend = body
+                    .get("backend")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let server_path = if backend.starts_with("build:") {
+                    match server::launch_target(&app_config, &backend) {
+                        Ok(target) => target.binary.display().to_string(),
+                        Err(e) => {
+                            return warp::reply::json(&serde_json::json!({
+                                "ok": false,
+                                "error": format!("{e:#}")
+                            }));
+                        }
+                    }
+                } else {
                     let ui = state.ui_settings.lock().unwrap();
                     if ui.llama_server_path.is_empty() {
                         app_config.llama_server_path.display().to_string()
@@ -986,4 +1005,143 @@ fn api_devices(
                 Ok::<_, warp::Rejection>(reply)
             },
         )
+}
+
+/// Install page: upstream releases and backends for this platform,
+/// installed builds, install / remove, and "use this build in Settings".
+fn api_builds(
+    state: AppState,
+    app_config: Arc<AppConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    use crate::llama::builds;
+
+    let catalog = warp::path!("api" / "builds" / "catalog")
+        .and(warp::get())
+        .and_then(|| async {
+            let releases = builds::recent_releases(8).await;
+            let reply = match releases {
+                Ok(releases) => warp::reply::json(&serde_json::json!({
+                    "backends": builds::backend_options(),
+                    "releases": releases,
+                    "root": builds::builds_root(),
+                })),
+                Err(e) => warp::reply::json(&serde_json::json!({
+                    "backends": builds::backend_options(),
+                    "releases": [],
+                    "root": builds::builds_root(),
+                    "error": format!("{e:#}"),
+                })),
+            };
+            Ok::<_, warp::Rejection>(reply)
+        });
+
+    let installed = warp::path!("api" / "builds" / "installed")
+        .and(warp::get())
+        .map(|| warp::reply::json(&serde_json::json!({"builds": builds::installed_builds()})));
+
+    let install_state = state.clone();
+    let install_config = app_config.clone();
+    let install = warp::path!("api" / "builds" / "install")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(warp::any().map(move || (install_state.clone(), install_config.clone())))
+        .and_then(
+            |body: serde_json::Value, (state, app_config): (AppState, Arc<AppConfig>)| async move {
+                let backend = body
+                    .get("backend")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tag = body
+                    .get("tag")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if backend.is_empty() || tag.is_empty() {
+                    return Ok::<_, warp::Rejection>(warp::reply::json(
+                        &serde_json::json!({"ok": false, "error": "backend and tag required"}),
+                    ));
+                }
+                {
+                    let mut slot = state.build_install.lock().unwrap();
+                    if slot.as_ref().is_some_and(|p| !p.done) {
+                        return Ok(warp::reply::json(
+                            &serde_json::json!({"ok": false, "error": "an install is already running"}),
+                        ));
+                    }
+                    *slot = Some(builds::InstallProgress {
+                        id: builds::build_id(&backend, &tag),
+                        backend: backend.clone(),
+                        tag: tag.clone(),
+                        phase: "Starting".to_string(),
+                        ..Default::default()
+                    });
+                }
+                crate::applog::info(format!("Installing llama.cpp {tag} ({backend})"));
+                tokio::spawn(async move {
+                    let result = builds::install(state.clone(), app_config, backend, tag).await;
+                    let mut slot = state.build_install.lock().unwrap();
+                    if let Some(p) = slot.as_mut() {
+                        p.done = true;
+                        match &result {
+                            Ok(build) => {
+                                p.phase = format!("Installed {}", build.id);
+                                crate::applog::info(format!(
+                                    "Installed llama.cpp build {} ({} device(s) found)",
+                                    build.id,
+                                    build.devices.len()
+                                ));
+                            }
+                            Err(e) => {
+                                p.error = Some(format!("{e:#}"));
+                                crate::applog::error(format!("llama.cpp install failed: {e:#}"));
+                            }
+                        }
+                    }
+                });
+                Ok(warp::reply::json(&serde_json::json!({"ok": true})))
+            },
+        );
+
+    let remove = warp::path!("api" / "builds" / "remove")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(|body: serde_json::Value| {
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            match builds::remove(id) {
+                Ok(()) => {
+                    crate::applog::info(format!("Removed llama.cpp build {id}"));
+                    warp::reply::json(&serde_json::json!({"ok": true}))
+                }
+                Err(e) => warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")})),
+            }
+        });
+
+    // Point Settings at an installed build so presets on "Configured
+    // binary" use it.
+    let use_state = state.clone();
+    let use_build = warp::path!("api" / "builds" / "use")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(warp::any().map(move || use_state.clone()))
+        .map(|body: serde_json::Value, state: AppState| {
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let Some(build) = builds::installed_build(id) else {
+                return warp::reply::json(&serde_json::json!({"ok": false, "error": "no such build"}));
+            };
+            let mut settings = state.ui_settings.lock().unwrap();
+            settings.llama_server_path = build.server_path.display().to_string();
+            settings.llama_server_cwd = build.dir.display().to_string();
+            let saved = app_state::save_ui_settings(&state.ui_settings_path, &settings);
+            drop(settings);
+            match saved {
+                Ok(()) => {
+                    crate::applog::info(format!("Settings now use llama.cpp build {id}"));
+                    warp::reply::json(&serde_json::json!({"ok": true}))
+                }
+                Err(e) => warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")})),
+            }
+        });
+
+    catalog.or(installed).or(install).or(remove).or(use_build).boxed()
 }

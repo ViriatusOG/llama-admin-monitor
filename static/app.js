@@ -1,6 +1,6 @@
 // ─── App shell: navigation + responsive drawer ────────────────────────────
 
-const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'models'];
+const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'models', 'install'];
 let activeSection = 'monitor';
 
 function switchTab(name) {
@@ -19,6 +19,7 @@ function switchTab(name) {
     if (name === 'models') loadModelsTab();
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
+    if (name === 'install') loadInstallPage(false);
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
     if (name === 'logs') { logsUnread = 0; renderLogsNav(); const el = document.getElementById('app-log'); el.scrollTop = el.scrollHeight; }
 
@@ -361,6 +362,8 @@ function fileBrowserSelect(path) {
     closeFileBrowser();
 }
 
+let pendingBuild = 'vulkan';
+
 // --- Device picker (preset editor) ---
 
 // Keyed by backend: a separate CUDA build lists different devices.
@@ -500,7 +503,7 @@ async function toggleBenchmark() {
     }
 
     try {
-        const payload = { model_path: modelPath, splits: splits, gpu_layers: ngl };
+        const payload = { model_path: modelPath, splits: splits, gpu_layers: ngl, backend: getConfig().backend || '' };
         if (batchSizes.length > 0) payload.batch_sizes = batchSizes;
         if (ubatchSizes.length > 0) payload.ubatch_sizes = ubatchSizes;
         if (threads.length > 0) payload.threads = threads;
@@ -1695,6 +1698,8 @@ function presetChips(p) {
     const chips = [];
     if (p.context_size) chips.push('ctx ' + p.context_size.toLocaleString());
     if (p.gpu_layers != null) chips.push('ngl ' + p.gpu_layers);
+    if (p.backend && p.backend.startsWith('build:')) chips.push(p.backend.slice(6));
+    else if (p.backend === 'cuda') chips.push('build-cuda');
     if (p.devices) chips.push('dev ' + p.devices);
     if (p.tensor_split) chips.push('ts ' + p.tensor_split);
     if (p.backend) chips.push(p.backend);
@@ -1759,6 +1764,35 @@ function selectedPreset(id) {
     return presets.find(pr => pr.id === targetId) || null;
 }
 
+// Options for the Build select: the configured binary, every installed
+// build, and the legacy sibling build-cuda tree when a preset uses it.
+async function populateBuildSelect(current) {
+    const sel = document.getElementById('modal-backend');
+    let builds = [];
+    try {
+        const res = await fetch('/api/builds/installed');
+        builds = (await res.json()).builds || [];
+    } catch (_) {}
+    const options = ['<option value="vulkan">Configured binary (Settings)</option>'];
+    builds.forEach(b => {
+        options.push('<option value="build:' + escapeHtml(b.id) + '">' + escapeHtml(buildLabel(b)) + ' (installed)</option>');
+    });
+    if (current === 'cuda' || !current || current === 'vulkan') {
+        options.push('<option value="cuda">Separate CUDA build (build-cuda/bin)</option>');
+    }
+    if (current && current.startsWith('build:') && !builds.some(b => 'build:' + b.id === current)) {
+        options.push('<option value="' + escapeHtml(current) + '">' + escapeHtml(current.slice(6)) + ' (not installed)</option>');
+    }
+    sel.innerHTML = options.join('');
+    sel.value = current || 'vulkan';
+    if (sel.value !== (current || 'vulkan')) sel.value = 'vulkan';
+}
+
+function buildLabel(b) {
+    const names = { vulkan: 'Vulkan', 'cuda-12.8': 'CUDA 12.8', 'cuda-13.3': 'CUDA 13.3', 'rocm-10.0': 'ROCm 10.0', cpu: 'CPU', metal: 'Metal' };
+    return (names[b.backend] || b.backend) + ' ' + b.tag;
+}
+
 function openPresetModal(mode, id) {
     const modal = document.getElementById('preset-modal');
     const title = document.getElementById('modal-title');
@@ -1789,7 +1823,7 @@ function openPresetModal(mode, id) {
         setVal('modal-parallel-slots', p.parallel_slots || 1);
         // GPU
         setVal('modal-tensor-split', p.tensor_split);
-        setVal('modal-backend', p.backend || 'vulkan');
+        pendingBuild = p.backend || 'vulkan';
         const dp = document.getElementById('modal-devices'); dp.innerHTML = ''; dp.dataset.unlisted = p.devices || '';
         setOpt('modal-split-mode', p.split_mode);
         numOrEmpty('modal-main-gpu', p.main_gpu);
@@ -1819,9 +1853,11 @@ function openPresetModal(mode, id) {
         setVal('modal-batch-size', 2048);
         setVal('modal-ubatch-size', 2048);
         setVal('modal-parallel-slots', 1);
+        pendingBuild = 'vulkan';
         const dp = document.getElementById('modal-devices'); dp.innerHTML = ''; dp.dataset.unlisted = '';
     }
-    onBackendChange();
+    // The Build list comes from the server; the device picker follows it.
+    populateBuildSelect(pendingBuild).then(onBackendChange);
 
     modal.classList.add('open');
     // Scroll modal body to top
@@ -2047,6 +2083,7 @@ function getConfig() {
         ctv: p.ctv || 'f16',
         tensor_split: p.tensor_split || '',
         devices: p.devices || '',
+        backend: p.backend || '',
         batch_size: p.batch_size || 2048,
         ubatch_size: p.ubatch_size || p.batch_size || 2048,
         no_mmap: !!p.no_mmap,
@@ -2340,6 +2377,7 @@ ws.onmessage = e => {
     renderGpuCards(gpuList);
     renderSystemCards(d.system);
     renderUpdatePhase(d.app_update || null);
+    renderInstallProgress(d.build_install || null);
 
     const telemetry = document.getElementById('monitor-telemetry-badge');
     telemetry.textContent = gpuList.length > 0 ? 'GPU telemetry \u00b7 Live \u00b7 ' + gpuList.length + ' device' + (gpuList.length === 1 ? '' : 's') : 'GPU telemetry \u00b7 Unavailable';
@@ -2681,3 +2719,167 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+
+// --- Install page: prebuilt llama.cpp builds ---
+
+let installCatalog = null;
+let installedBuilds = [];
+
+async function loadInstallPage(force) {
+    if (force || !installCatalog) {
+        document.getElementById('install-release').innerHTML = '<option value="">Loading\u2026</option>';
+        try {
+            const res = await fetch('/api/builds/catalog');
+            installCatalog = await res.json();
+        } catch (err) {
+            installCatalog = { backends: [], releases: [], error: err.message };
+        }
+    }
+    await refreshInstalledBuilds();
+    renderInstallCatalog();
+}
+
+async function refreshInstalledBuilds() {
+    try {
+        const res = await fetch('/api/builds/installed');
+        installedBuilds = (await res.json()).builds || [];
+    } catch (_) { installedBuilds = []; }
+    renderInstalledBuilds();
+}
+
+function renderInstalledBuilds() {
+    const host = document.getElementById('builds-installed');
+    document.getElementById('builds-root').textContent = installCatalog && installCatalog.root ? installCatalog.root : '';
+    if (installedBuilds.length === 0) {
+        host.innerHTML = '<div class="empty-state"><div class="empty-state-title">No builds installed yet</div><p>Install one below, or keep using the binary configured in Settings.</p></div>';
+        return;
+    }
+    host.innerHTML = installedBuilds.map(b => {
+        const devices = b.devices && b.devices.length
+            ? b.devices.map(d => '<span class="preset-chip" title="' + escapeHtml(d.name) + '">' + escapeHtml(d.id) + ' \u00b7 ' + escapeHtml(d.name) + '</span>').join('')
+            : '<span class="preset-chip" title="' + escapeHtml(b.device_check_error || '') + '">' + (b.device_check_error ? 'device check failed' : 'no GPU devices') + '</span>';
+        return '<div class="build-row">' +
+            '<div class="build-row-main">' +
+                '<div class="build-row-title">' + escapeHtml(buildLabel(b)) + '<span class="badge badge-neutral mono">build:' + escapeHtml(b.id) + '</span></div>' +
+                '<div class="build-row-path" title="' + escapeHtml(b.server_path) + '">' + escapeHtml(b.server_path) + '</div>' +
+                '<div class="build-row-devices">' + devices + '</div>' +
+            '</div>' +
+            '<div class="build-row-actions">' +
+                '<button class="btn btn-sm" type="button" onclick="useBuildInSettings(\'' + jsStr(b.id) + '\')" title="Point Settings at this build so presets on Configured binary use it">Use in Settings</button>' +
+                '<button class="btn btn-sm btn-ghost preset-delete" type="button" onclick="removeBuild(\'' + jsStr(b.id) + '\')">Remove</button>' +
+            '</div></div>';
+    }).join('');
+}
+
+function renderInstallCatalog() {
+    const sel = document.getElementById('install-release');
+    const note = document.getElementById('install-note');
+    const releases = installCatalog.releases || [];
+    sel.innerHTML = releases.length
+        ? releases.map(r => '<option value="' + escapeHtml(r.tag) + '">' + escapeHtml(r.tag) + (r.published_at ? ' \u00b7 ' + new Date(r.published_at).toLocaleDateString() : '') + '</option>').join('')
+        : '<option value="">No releases found</option>';
+    const backends = installCatalog.backends || [];
+    const host = document.getElementById('install-backends');
+    if (backends.length === 0) {
+        host.innerHTML = '<span class="help-text">No prebuilt llama.cpp binaries are published for this OS/CPU.</span>';
+    } else {
+        host.innerHTML = backends.map((b, i) => {
+            const have = installedBuilds.some(x => x.backend === b.id);
+            return '<label class="backend-option' + (have ? ' is-installed' : '') + '"><input type="radio" name="install-backend" value="' + escapeHtml(b.id) + '"' + (i === 0 ? ' checked' : '') + '>' +
+                '<span class="backend-option-label">' + escapeHtml(b.label) + '</span>' +
+                '<span class="backend-option-req">' + escapeHtml(b.requires) + '</span></label>';
+        }).join('');
+    }
+    if (installCatalog.error) {
+        note.textContent = 'Could not list llama.cpp releases: ' + installCatalog.error;
+        note.hidden = false;
+    } else {
+        note.hidden = true;
+    }
+    document.getElementById('btn-install-build').disabled = releases.length === 0 || backends.length === 0;
+}
+
+async function startInstall() {
+    const tag = document.getElementById('install-release').value;
+    const backend = (document.querySelector('input[name="install-backend"]:checked') || {}).value;
+    if (!tag || !backend) return;
+    const id = backend + '-' + tag;
+    if (installedBuilds.some(b => b.id === id)) {
+        showToast(id + ' is already installed', 'warn');
+        return;
+    }
+    const proceed = await showConfirm('Install ' + id,
+        'Download llama.cpp ' + tag + ' (' + backend + ') from GitHub into the builds folder and check which devices it can see?', 'Install');
+    if (!proceed) return;
+    try {
+        const res = await fetch('/api/builds/install', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backend, tag }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+        showToast('Installing ' + id + '\u2026', 'success');
+    } catch (err) {
+        showToast('Install failed to start: ' + err.message, 'error');
+    }
+}
+
+let lastInstallKey = '';
+
+function renderInstallProgress(p) {
+    const box = document.getElementById('install-progress');
+    const nav = document.getElementById('nav-count-install');
+    if (!p) {
+        box.hidden = true;
+        nav.textContent = '';
+        return;
+    }
+    const pct = p.total_bytes > 0 ? Math.min(100, p.downloaded_bytes / p.total_bytes * 100) : 0;
+    if (!p.done) {
+        box.hidden = false;
+        document.getElementById('install-progress-title').textContent = 'Installing ' + p.id;
+        document.getElementById('install-progress-phase').textContent = p.phase;
+        document.getElementById('install-progress-bar').style.width = (p.total_bytes > 0 ? pct : 100).toFixed(0) + '%';
+        document.getElementById('install-progress-bytes').textContent = p.total_bytes > 0 ? fmtBytes(p.downloaded_bytes) + ' of ' + fmtBytes(p.total_bytes) : '';
+        nav.textContent = p.total_bytes > 0 ? pct.toFixed(0) + '%' : '\u2026';
+        return;
+    }
+    nav.textContent = '';
+    // Announce completion once per install.
+    const key = p.id + ':' + (p.error || 'ok');
+    if (key !== lastInstallKey) {
+        lastInstallKey = key;
+        box.hidden = true;
+        if (p.error) showToast('Install of ' + p.id + ' failed: ' + p.error, 'error', { label: 'Open Install', onClick: () => switchTab('install') });
+        else showToast('Installed ' + p.id, 'success', { label: 'Open Install', onClick: () => switchTab('install') });
+        refreshInstalledBuilds();
+    }
+}
+
+async function removeBuild(id) {
+    const proceed = await showConfirm('Remove ' + id, 'Delete this build from disk? Presets that use it will fail to start until they pick another build.', 'Remove', true);
+    if (!proceed) return;
+    try {
+        const res = await fetch('/api/builds/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+        showToast('Removed ' + id, 'success');
+        refreshInstalledBuilds();
+    } catch (err) {
+        showToast('Remove failed: ' + err.message, 'error');
+    }
+}
+
+async function useBuildInSettings(id) {
+    try {
+        const res = await fetch('/api/builds/use', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+        const settings = await (await fetch('/api/settings')).json();
+        applySettings(settings);
+        showToast('Settings now use ' + id + ' for presets on "Configured binary"', 'success');
+    } catch (err) {
+        showToast('Could not update Settings: ' + err.message, 'error');
+    }
+}
