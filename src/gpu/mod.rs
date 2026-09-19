@@ -131,7 +131,9 @@ pub fn detect_backend(force: &str) -> Arc<dyn GpuBackend> {
             }
             match backends.len() {
                 0 => {
-                    crate::applog::warn("No working GPU monitoring tool found (rocm-smi / nvidia-smi)");
+                    crate::applog::warn(
+                        "No working GPU monitoring tool found (rocm-smi / nvidia-smi)",
+                    );
                     Arc::new(dummy::DummyBackend)
                 }
                 1 => backends.into_iter().next().unwrap(),

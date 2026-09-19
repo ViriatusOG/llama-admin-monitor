@@ -20,7 +20,11 @@ impl GpuBackend for NvidiaBackend {
             // and friends on stdout, so fall back to it when stderr is empty.
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let msg = if stderr.trim().is_empty() { stdout } else { stderr };
+            let msg = if stderr.trim().is_empty() {
+                stdout
+            } else {
+                stderr
+            };
             anyhow::bail!("nvidia-smi failed: {}", msg.trim());
         }
 
