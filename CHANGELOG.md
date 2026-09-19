@@ -7,6 +7,8 @@ and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-09-19
 ### Fixed
 - The Pi terminal was capped at 24 rows regardless of the window: xterm.js gives its root element the class `terminal`, which collided with the Process Output panel's `.terminal` rule (`max-height: 360px`). The panel's class is now `log-terminal`, and the terminal follows the browser window size (re-fitting on resize, font load and page switch).
 
