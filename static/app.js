@@ -1442,6 +1442,77 @@ function renderSystemCards(sys) {
         setBar('sys-disk-bar', null);
     }
     document.getElementById('sys-disk-sub').textContent = 'All physical disks \u00b7 includes other applications';
+    renderDiskHealth(sys.disk);
+}
+
+// The physical disk behind the models directory: identity in the header,
+// SMART health and wear in a meta block laid out like the GPU cards.
+function renderDiskHealth(d) {
+    const meta = document.getElementById('sys-disk-meta');
+    const kicker = document.getElementById('sys-disk-kicker');
+    const title = document.getElementById('sys-disk-title');
+    if (!d) {
+        kicker.textContent = 'System';
+        title.textContent = 'Disk';
+        title.title = '';
+        meta.hidden = true;
+        return;
+    }
+    kicker.textContent = 'System \u00b7 ' + (d.kind || 'Disk') + (d.size_bytes ? ' \u00b7 ' + fmtBytes(d.size_bytes) : '');
+    title.textContent = d.model || d.device || 'Disk';
+    title.title = d.model ? d.model + ' (' + d.device + ')' : d.device;
+    meta.hidden = false;
+
+    const temp = document.getElementById('sys-disk-temp');
+    if (d.temp_c != null) {
+        // NVMe drives throttle around 70-80 C; spinning disks want < 50.
+        const warn = d.kind === 'HDD' ? [45, 55] : [65, 75];
+        setTemp(temp, '', d.temp_c, warn);
+        temp.title = '';
+    } else {
+        temp.textContent = 'Not available';
+        temp.className = 'monitor-metric-reading';
+        temp.title = 'No hwmon sensor for this drive (NVMe exposes one; SATA needs the drivetemp kernel module) and no SMART data';
+    }
+
+    const health = document.getElementById('sys-disk-health');
+    if (d.health_passed === true) {
+        health.textContent = d.critical_warning ? 'Passed \u00b7 warning 0x' + d.critical_warning.toString(16) : 'Passed';
+        health.className = 'monitor-metric-reading' + (d.critical_warning ? ' is-warn' : ' is-good');
+        health.title = d.critical_warning ? 'NVMe critical warning bits set; check smartctl -a' : 'SMART overall assessment';
+    } else if (d.health_passed === false) {
+        health.textContent = 'FAILED';
+        health.className = 'monitor-metric-reading is-bad';
+        health.title = 'SMART reports the drive is failing; back up now';
+    } else {
+        health.textContent = 'Unavailable \u24d8';
+        health.className = 'monitor-metric-reading';
+        health.title = d.smart_error ? d.smart_error + ' \u2014 see README: smartctl sudoers rule' : 'SMART not read';
+    }
+
+    const row = (id, valueId, value, cls) => {
+        const r = document.getElementById(id);
+        if (value == null) { r.hidden = true; return; }
+        r.hidden = false;
+        const el = document.getElementById(valueId);
+        el.textContent = value;
+        el.className = 'monitor-metric-reading' + (cls || '');
+    };
+    row('sys-disk-wear-row', 'sys-disk-wear', d.wear_percent != null ? d.wear_percent + '% of rated life' : null,
+        d.wear_percent >= 90 ? ' is-bad' : d.wear_percent >= 70 ? ' is-warn' : '');
+    row('sys-disk-spare-row', 'sys-disk-spare', d.available_spare_percent != null ? d.available_spare_percent + '%' : null,
+        d.available_spare_percent != null && d.available_spare_percent < 20 ? ' is-warn' : '');
+    row('sys-disk-hours-row', 'sys-disk-hours', d.power_on_hours != null ? fmtHours(d.power_on_hours) : null, '');
+    row('sys-disk-written-row', 'sys-disk-written', d.data_written_bytes != null ? fmtBytes(d.data_written_bytes) : null, '');
+    row('sys-disk-errors-row', 'sys-disk-errors', d.media_errors != null ? String(d.media_errors) : null, d.media_errors > 0 ? ' is-bad' : '');
+    row('sys-disk-realloc-row', 'sys-disk-realloc', d.reallocated_sectors != null ? String(d.reallocated_sectors) : null, d.reallocated_sectors > 0 ? ' is-warn' : '');
+}
+
+function fmtHours(h) {
+    if (h < 48) return h + ' h';
+    const days = h / 24;
+    if (days < 365) return Math.round(days) + ' days';
+    return (days / 365).toFixed(1) + ' years';
 }
 
 // --- Sorting ---

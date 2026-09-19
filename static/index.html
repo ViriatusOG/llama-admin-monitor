@@ -300,8 +300,8 @@
                     <div class="card monitor-system-card" data-monitor-key="system:disk" data-monitor-label="Disk">
                         <div class="card-header">
                             <div>
-                                <div class="card-kicker">System</div>
-                                <div class="card-title">Disk</div>
+                                <div class="card-kicker" id="sys-disk-kicker">System</div>
+                                <div class="card-title" id="sys-disk-title">Disk</div>
                             </div>
                             <div class="monitor-card-tools"><button class="btn btn-sm btn-ghost monitor-drag-handle" type="button" draggable="true" title="Drag to reorder; use arrow keys to move" aria-label="Move Disk card; use arrow keys">&#10303;</button><button class="btn btn-sm btn-ghost monitor-hide-btn" type="button" data-monitor-hide="system:disk" aria-label="Hide Disk card">Hide</button><div class="card-icon icon-cyan"><span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg></span></div></div>
                         </div>
@@ -321,6 +321,16 @@
                         </div>
                         <div class="progress-bar"><div class="progress-fill" id="sys-disk-bar"></div></div>
                         <div class="monitor-metric-sub" id="sys-disk-sub"></div>
+                        <div class="monitor-gpu-meta" id="sys-disk-meta" hidden>
+                            <div class="monitor-metric-row"><span class="monitor-metric-label">Temperature</span><span class="monitor-metric-reading" id="sys-disk-temp">&mdash;</span></div>
+                            <div class="monitor-metric-row"><span class="monitor-metric-label">Health</span><span class="monitor-metric-reading" id="sys-disk-health">&mdash;</span></div>
+                            <div class="monitor-metric-row" id="sys-disk-wear-row" hidden><span class="monitor-metric-label">Wear</span><span class="monitor-metric-reading" id="sys-disk-wear">&mdash;</span></div>
+                            <div class="monitor-metric-row" id="sys-disk-spare-row" hidden><span class="monitor-metric-label">Spare blocks</span><span class="monitor-metric-reading" id="sys-disk-spare">&mdash;</span></div>
+                            <div class="monitor-metric-row" id="sys-disk-hours-row" hidden><span class="monitor-metric-label">Power on</span><span class="monitor-metric-reading" id="sys-disk-hours">&mdash;</span></div>
+                            <div class="monitor-metric-row" id="sys-disk-written-row" hidden><span class="monitor-metric-label">Total written</span><span class="monitor-metric-reading" id="sys-disk-written">&mdash;</span></div>
+                            <div class="monitor-metric-row" id="sys-disk-errors-row" hidden><span class="monitor-metric-label">Media errors</span><span class="monitor-metric-reading" id="sys-disk-errors">&mdash;</span></div>
+                            <div class="monitor-metric-row" id="sys-disk-realloc-row" hidden><span class="monitor-metric-label">Reallocated sectors</span><span class="monitor-metric-reading" id="sys-disk-realloc">&mdash;</span></div>
+                        </div>
                     </div>
 
                 </div>

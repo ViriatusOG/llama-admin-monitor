@@ -2,6 +2,8 @@
 //! `/proc` on Linux; on other platforms every reading stays "unavailable"
 //! rather than zero, so the UI can say so instead of showing 0 %.
 
+pub mod disk;
+
 use std::path::Path;
 use std::time::Instant;
 
@@ -28,6 +30,9 @@ pub struct SystemStats {
     pub disk_total_bytes: Option<u64>,
     pub disk_free_bytes: Option<u64>,
     pub disk_mount: String,
+    /// The physical disk behind the models directory: model, temperature
+    /// and SMART health (see `disk`). None when it cannot be resolved.
+    pub disk: Option<disk::DiskInfo>,
     pub sample_secs: f32,
     /// Physical memory slots, from `dmidecode -t 17`. Static, read once.
     pub dimm_slots_total: u32,
@@ -60,6 +65,7 @@ pub struct SystemSampler {
     /// (slots, populated, error) once probed; probing costs a subprocess.
     dimms: Option<(u32, Vec<DimmInfo>, Option<String>)>,
     cpu_model: Option<String>,
+    disk: disk::DiskProbe,
 }
 
 impl SystemSampler {
@@ -161,6 +167,9 @@ impl SystemSampler {
             stats.disk_total_bytes = Some(space.total);
             stats.disk_free_bytes = Some(space.free);
             stats.disk_mount = space.mount;
+        }
+        if cfg!(target_os = "linux") {
+            stats.disk = self.disk.sample(&target);
         }
 
         stats

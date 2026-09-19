@@ -15,6 +15,7 @@ Backwards compatibility is preserved unless explicitly noted.
 - AMD GPU cards show all three temperature sensors rocm-smi reports: **Hotspot** (junction, the headline value and what the card throttles on), **Edge** and **Memory**. Hotspot and memory use looser warning thresholds (95/105 C) than edge and NVIDIA's single sensor (80/90 C), matching what those sensors normally run at.
 
 ### Added
+- Disk card laid out like the GPU cards: the physical drive behind the models directory (model, NVMe/SSD/HDD, capacity) with temperature (kernel hwmon, no privileges on NVMe), SMART health, wear, spare blocks, power-on time, total written, media errors and reallocated sectors. SMART comes from `smartctl -j -H -A` (plain, then `sudo -n`; README has the sudoers line) and is refreshed once a minute.
 - Install page: each installed llama.cpp build shows whether it is on the newest upstream release ("up to date" / "bNNNNN available") with an **Update to bNNNNN** button. Updating installs the new tag for the same backend, moves presets and Settings that used the old build over to it, and removes the old one; a summary line above the list says how many builds are behind. (`POST /api/builds/update {id}`)
 
 ### Changed

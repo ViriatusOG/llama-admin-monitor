@@ -31,7 +31,7 @@ Same dashboard in the **Mint** light theme:
 - **Inference card** — prompt/generation speed, slot status and KV-cache occupancy (with a bar that turns amber at 80 % and red at 95 %), from llama-server's Prometheus endpoint
 - **VRAM usage card** — one segmented bar across every GPU, coloured per vendor (AMD, NVIDIA, Intel) with an estimated context/KV segment and free space, labelled in GB
 - **One card per GPU** — utilisation and VRAM bars, temperature, power draw vs. limit (flagged when capped), core and memory clocks; AMD, NVIDIA and Intel cards are shown together. AMD cards list all three sensors rocm-smi exposes — **Hotspot** (junction, the value the card throttles on), **Edge** and **Memory** — with thresholds suited to each; NVIDIA cards show the single sensor `nvidia-smi` reports
-- **CPU, Memory and Disk cards** — per-core utilisation grid and CPU model, load average, RAM and swap, populated DIMM slots with type and speed (via `dmidecode`, see below), disk read/write throughput and free space on the models volume (from `/proc` on Linux)
+- **CPU, Memory and Disk cards** — per-core utilisation grid and CPU model, load average, RAM and swap, populated DIMM slots with type and speed (via `dmidecode`, see below), disk read/write throughput and free space on the models volume, plus the drive's model, temperature and SMART health/wear (via `smartctl`, see below)
 - **Arrange the dashboard** — drag cards by their grip (or move them with the arrow keys) and hide the ones you don't need; the layout is remembered per browser
 
 ### Server management
@@ -155,6 +155,18 @@ sudo chmod 0440 /etc/sudoers.d/llama-admin-monitor
 ```
 
 Without it the Memory card still shows usage, and the slot row explains what is missing.
+
+### Disk health
+
+The Disk card names the physical drive behind the models directory (resolved through `findmnt`/`lsblk`, so LVM and partitions are followed to the disk) and shows its temperature, SMART health, wear, spare blocks, power-on time, total bytes written and media errors, laid out like the GPU cards. Temperature comes from the kernel's hwmon node and needs no privileges on NVMe drives (SATA drives need the `drivetemp` kernel module: `sudo modprobe drivetemp`). The SMART rows come from `smartctl -j -H -A`, which needs root; add it to the same sudoers file:
+
+```bash
+sudo apt install -y smartmontools
+echo "$USER ALL=(root) NOPASSWD: /usr/sbin/dmidecode -t 17, /usr/sbin/smartctl -j -H -A /dev/*" | sudo tee /etc/sudoers.d/llama-admin-monitor
+sudo chmod 0440 /etc/sudoers.d/llama-admin-monitor
+```
+
+SMART is re-read once a minute. Without the rule the card still shows throughput, free space and temperature, and the Health row explains what is missing.
 
 ## Updates and release tracks
 
@@ -283,6 +295,7 @@ src/
     builds.rs          -- Prebuilt llama.cpp installs from ggml-org releases
   system/
     mod.rs             -- Host CPU / memory / disk sampler (/proc, df, dmidecode)
+    disk.rs            -- Physical disk identity, hwmon temperature, SMART via smartctl
   update.rs            -- Release-track updater: GitHub Releases, verify, swap, re-exec
   presets/
     mod.rs             -- ModelPreset, CRUD, file persistence
