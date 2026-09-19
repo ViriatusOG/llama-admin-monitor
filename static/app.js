@@ -20,7 +20,7 @@ function switchTab(name) {
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
     if (name === 'install') loadInstallPage(false);
-    if (name === 'pi') openPiPage();
+    if (name === 'pi') { openPiPage(); setTimeout(piResize, 50); }
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
     if (name === 'logs') { logsUnread = 0; renderLogsNav(); const el = document.getElementById('app-log'); el.scrollTop = el.scrollHeight; }
 
@@ -3285,7 +3285,7 @@ function renderPiStatus() {
     } else if (st.exit_code != null && !st.running) {
         note.textContent = (st.label || 'pi') + ' exited with code ' + st.exit_code + '. Start it again when ready.';
     } else {
-        note.innerHTML = 'Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.models_json || '~/.pi/agent/models.json') + '</code> points pi at this monitor\'s <code>/v1</code> endpoint; it is refreshed with the loaded model every time pi starts. Inside pi, <code>/model</code> lists it alongside any other providers you have configured.';
+        note.innerHTML = 'Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.models_json || '~/.pi/agent/models.json') + '</code> points pi at this monitor\'s <code>/v1</code> endpoint. Every preset is listed as a model; pi starts on the loaded model (or the active preset) and <code>/model</code> inside pi switches between them. Requests always go to whatever llama-server has loaded.';
     }
 }
 
@@ -3377,14 +3377,29 @@ function createPiTerminal() {
         }
     });
     window.addEventListener('resize', piResize);
+    // xterm measures its cell size lazily, so the first fit can be a no-op;
+    // watch the container and re-fit whenever it has a real size.
+    if (window.ResizeObserver) {
+        new ResizeObserver(() => piResize()).observe(document.getElementById('pi-terminal-wrap'));
+    }
     document.getElementById('pi-terminal-empty').hidden = true;
     piResize();
+    setTimeout(piResize, 100);
+    setTimeout(piResize, 600);
 }
+
+let piLastSize = '';
 
 function piResize() {
     if (!piTerm || !piFit || document.getElementById('section-pi').hidden) return;
-    try { piFit.fit(); } catch (_) { return; }
-    if (piSocket && piSocket.readyState === WebSocket.OPEN) {
+    try {
+        const dims = piFit.proposeDimensions();
+        if (!dims || !dims.cols || !dims.rows) return;
+        if (dims.cols !== piTerm.cols || dims.rows !== piTerm.rows) piTerm.resize(dims.cols, dims.rows);
+    } catch (_) { return; }
+    const key = piTerm.cols + 'x' + piTerm.rows;
+    if (piSocket && piSocket.readyState === WebSocket.OPEN && key !== piLastSize) {
+        piLastSize = key;
         piSocket.send(JSON.stringify({ resize: [piTerm.cols, piTerm.rows] }));
     }
 }
@@ -3398,7 +3413,7 @@ async function attachPiTerminal() {
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/pi');
     ws.binaryType = 'arraybuffer';
     piSocket = ws;
-    ws.onopen = () => { piResize(); piTerm.focus(); };
+    ws.onopen = () => { piLastSize = ''; piResize(); setTimeout(piResize, 150); piTerm.focus(); };
     ws.onmessage = e => {
         if (typeof e.data === 'string') {
             try {

@@ -117,32 +117,64 @@ pub fn status(shared: &Shared) -> Status {
     }
 }
 
-/// Adds (or refreshes) the monitor's provider in pi's models.json without
-/// touching anything else in the file. The model id is whatever is
-/// loaded now; llama-server serves one model and ignores the id, but pi
-/// needs an entry to pick.
-pub fn write_models_json(
-    monitor_port: u16,
-    model_id: &str,
-    model_name: &str,
-    context_window: u64,
-) -> Result<PathBuf> {
-    write_models_json_at(
-        models_json_path(),
-        monitor_port,
-        model_id,
-        model_name,
-        context_window,
-    )
+/// One entry in the provider's model list: a preset, as pi will see it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelEntry {
+    /// Passed to the API as the model id. llama-server serves one model
+    /// and ignores it, so the model file's stem doubles as a readable label
+    /// in pi's status bar.
+    pub id: String,
+    pub name: String,
+    pub context_window: u64,
 }
 
-fn write_models_json_at(
-    path: PathBuf,
-    monitor_port: u16,
-    model_id: &str,
-    model_name: &str,
-    context_window: u64,
-) -> Result<PathBuf> {
+/// The model id pi uses for a preset: the model file's name without
+/// extension, e.g. `Qwen3.8-27B-UD-Q8_K_XL`.
+pub fn model_id_for(model_path: &str) -> String {
+    std::path::Path::new(model_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "llama-server".to_string())
+}
+
+/// Every preset as a model entry, deduplicated by id (two presets on the
+/// same file keep the first's name and the larger context).
+pub fn entries_from_presets(presets: &[crate::presets::ModelPreset]) -> Vec<ModelEntry> {
+    let mut out: Vec<ModelEntry> = Vec::new();
+    for p in presets {
+        if p.model_path.trim().is_empty() {
+            continue;
+        }
+        let id = model_id_for(&p.model_path);
+        if let Some(existing) = out.iter_mut().find(|e| e.id == id) {
+            existing.context_window = existing.context_window.max(p.context_size);
+            continue;
+        }
+        out.push(ModelEntry {
+            id,
+            name: p.name.clone(),
+            context_window: p.context_size.max(4096),
+        });
+    }
+    if out.is_empty() {
+        out.push(ModelEntry {
+            id: "llama-server".to_string(),
+            name: "llama-server (current model)".to_string(),
+            context_window: 32768,
+        });
+    }
+    out
+}
+
+/// Adds (or refreshes) the monitor's provider in pi's models.json without
+/// touching anything else in the file. Every preset becomes a model so
+/// `/model` inside pi lists them all.
+pub fn write_models_json(monitor_port: u16, models: &[ModelEntry]) -> Result<PathBuf> {
+    write_models_json_at(models_json_path(), monitor_port, models)
+}
+
+fn write_models_json_at(path: PathBuf, monitor_port: u16, models: &[ModelEntry]) -> Result<PathBuf> {
     let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text)
             .with_context(|| format!("{} is not valid JSON", path.display()))?,
@@ -159,19 +191,25 @@ fn write_models_json_at(
     if !providers.is_object() {
         bail!("\"providers\" in {} is not an object", path.display());
     }
+    let list: Vec<serde_json::Value> = models
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "name": m.name,
+                "contextWindow": m.context_window,
+                "maxTokens": std::cmp::min(m.context_window / 4, 32000).max(4096),
+                "reasoning": false,
+                "input": ["text"]
+            })
+        })
+        .collect();
     providers[PROVIDER] = serde_json::json!({
         "baseUrl": format!("http://127.0.0.1:{monitor_port}/v1"),
         "api": "openai-completions",
         // The proxy needs no key, but pi hides keyless models from /model.
         "apiKey": "llama-admin-monitor",
-        "models": [{
-            "id": model_id,
-            "name": model_name,
-            "contextWindow": context_window,
-            "maxTokens": std::cmp::min(context_window / 4, 32000).max(4096),
-            "reasoning": false,
-            "input": ["text"]
-        }]
+        "models": list
     });
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -306,6 +344,14 @@ impl Session {
 mod tests {
     use super::*;
 
+    fn entry(id: &str, ctx: u64) -> ModelEntry {
+        ModelEntry {
+            id: id.to_string(),
+            name: id.to_string(),
+            context_window: ctx,
+        }
+    }
+
     #[test]
     fn models_json_merges_into_existing_file() {
         let dir = std::env::temp_dir().join(format!("lam-pi-test-{}", std::process::id()));
@@ -316,7 +362,7 @@ mod tests {
             r#"{"providers": {"other": {"baseUrl": "https://x", "api": "openai-completions", "models": []}}}"#,
         )
         .unwrap();
-        write_models_json_at(path.clone(), 7778, "qwen3-32b", "Qwen3 32B", 128000).unwrap();
+        write_models_json_at(path.clone(), 7778, &[entry("qwen3-32b", 128000)]).unwrap();
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(v["providers"]["other"].is_object(), "other provider kept");
@@ -333,10 +379,32 @@ mod tests {
     fn models_json_created_when_missing() {
         let dir = std::env::temp_dir().join(format!("lam-pi-test2-{}", std::process::id()));
         let path = dir.join("agent").join("models.json");
-        write_models_json_at(path.clone(), 7778, "m", "M", 8192).unwrap();
+        write_models_json_at(path.clone(), 7778, &[entry("m", 8192)]).unwrap();
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(v["providers"][PROVIDER]["models"][0]["maxTokens"], 4096);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn presets_become_models() {
+        let mut a = crate::presets::default_presets().remove(0);
+        a.name = "Big".into();
+        a.model_path = "/m/Qwen3-32B-Q4_K_M.gguf".into();
+        a.context_size = 65536;
+        let mut b = a.clone();
+        b.name = "Same file, more context".into();
+        b.context_size = 131072;
+        let mut c = a.clone();
+        c.name = "Small".into();
+        c.model_path = "/m/gemma-3-12b-it-Q4_K_M.gguf".into();
+        c.context_size = 8192;
+        let entries = entries_from_presets(&[a, b, c]);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, "Qwen3-32B-Q4_K_M");
+        assert_eq!(entries[0].name, "Big");
+        assert_eq!(entries[0].context_window, 131072);
+        assert_eq!(entries[1].id, "gemma-3-12b-it-Q4_K_M");
+        assert_eq!(model_id_for(""), "llama-server");
     }
 }

@@ -1294,26 +1294,28 @@ fn api_pi(
                     "error": "pi is not installed; use Install pi first"
                 }));
             };
-            // Point pi at whatever is loaded (or a placeholder id when
-            // nothing is; llama-server ignores the id anyway).
-            let (model_id, model_name, ctx) = {
-                let cfg = state.server_config.lock().unwrap();
-                match cfg.as_ref() {
-                    Some(c) => {
-                        let file = std::path::Path::new(&c.model_path)
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "llama-server".to_string());
-                        (file.clone(), file, c.context_size.max(4096))
-                    }
-                    None => (
-                        "llama-server".to_string(),
-                        "llama-server (current model)".to_string(),
-                        32768,
-                    ),
-                }
+            // Every preset is a model in pi's list; start on the loaded
+            // model if the server is running, else on the active preset.
+            let presets = state.presets.lock().unwrap().clone();
+            let entries = pi::entries_from_presets(&presets);
+            let running_model = state
+                .server_config
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|c| pi::model_id_for(&c.model_path));
+            let active_model = {
+                let preset_id = state.ui_settings.lock().unwrap().preset_id.clone();
+                presets
+                    .iter()
+                    .find(|p| p.id == preset_id)
+                    .map(|p| pi::model_id_for(&p.model_path))
             };
-            if let Err(e) = pi::write_models_json(start_config.port, &model_id, &model_name, ctx) {
+            let model_id = running_model
+                .or(active_model)
+                .filter(|id| entries.iter().any(|e| &e.id == id))
+                .unwrap_or_else(|| entries[0].id.clone());
+            if let Err(e) = pi::write_models_json(start_config.port, &entries) {
                 return warp::reply::json(&serde_json::json!({
                     "ok": false,
                     "error": format!("cannot write pi models.json: {e:#}")
