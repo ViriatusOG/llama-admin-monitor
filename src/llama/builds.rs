@@ -349,15 +349,29 @@ pub async fn install(
             p.phase = format!("Downloading llama.cpp {tag} ({})", option.label)
         });
         let archive = staging.join("build.tar.gz");
-        download(&state, &client, &asset_url(&tag, option.suffix, false), &archive).await?;
+        download(
+            &state,
+            &client,
+            &asset_url(&tag, option.suffix, false),
+            &archive,
+        )
+        .await?;
         set_progress(&state, |p| p.phase = "Extracting".to_string());
         extract(&archive, &staging).await?;
         tokio::fs::remove_file(&archive).await.ok();
 
         if option.has_cudart {
-            set_progress(&state, |p| p.phase = "Downloading CUDA runtime libraries".to_string());
+            set_progress(&state, |p| {
+                p.phase = "Downloading CUDA runtime libraries".to_string()
+            });
             let cudart = staging.join("cudart.tar.gz");
-            download(&state, &client, &asset_url(&tag, option.suffix, true), &cudart).await?;
+            download(
+                &state,
+                &client,
+                &asset_url(&tag, option.suffix, true),
+                &cudart,
+            )
+            .await?;
             set_progress(&state, |p| p.phase = "Extracting CUDA runtime".to_string());
             extract(&cudart, &staging).await?;
             tokio::fs::remove_file(&cudart).await.ok();
@@ -401,7 +415,9 @@ pub async fn install(
         };
         write_meta(&build)?;
 
-        set_progress(&state, |p| p.phase = "Checking which devices it can see".to_string());
+        set_progress(&state, |p| {
+            p.phase = "Checking which devices it can see".to_string()
+        });
         let probe = crate::llama::server::list_devices(&state, &app_config, &format!("build:{id}"));
         match probe.await {
             Ok(devices) => build.devices = devices,

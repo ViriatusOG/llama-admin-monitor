@@ -1113,7 +1113,9 @@ fn api_builds(
                     crate::applog::info(format!("Removed llama.cpp build {id}"));
                     warp::reply::json(&serde_json::json!({"ok": true}))
                 }
-                Err(e) => warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")})),
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+                }
             }
         });
 
@@ -1127,7 +1129,9 @@ fn api_builds(
         .map(|body: serde_json::Value, state: AppState| {
             let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let Some(build) = builds::installed_build(id) else {
-                return warp::reply::json(&serde_json::json!({"ok": false, "error": "no such build"}));
+                return warp::reply::json(
+                    &serde_json::json!({"ok": false, "error": "no such build"}),
+                );
             };
             let mut settings = state.ui_settings.lock().unwrap();
             settings.llama_server_path = build.server_path.display().to_string();
@@ -1139,9 +1143,16 @@ fn api_builds(
                     crate::applog::info(format!("Settings now use llama.cpp build {id}"));
                     warp::reply::json(&serde_json::json!({"ok": true}))
                 }
-                Err(e) => warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")})),
+                Err(e) => {
+                    warp::reply::json(&serde_json::json!({"ok": false, "error": format!("{e:#}")}))
+                }
             }
         });
 
-    catalog.or(installed).or(install).or(remove).or(use_build).boxed()
+    catalog
+        .or(installed)
+        .or(install)
+        .or(remove)
+        .or(use_build)
+        .boxed()
 }
