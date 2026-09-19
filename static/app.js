@@ -3542,6 +3542,12 @@ function renderDshStatus() {
     }
     const login = document.getElementById('dsh-login');
     login.hidden = !(isApp && hasLogin);
+    // The output matters while installing or starting, or after a crash;
+    // once the login URL is up it is just noise, so fold it away.
+    const details = document.getElementById('dsh-log-details');
+    const failed = !st.running && st.exit_code != null && st.exit_code !== 0;
+    details.open = !(isApp && hasLogin) && (st.running || failed || !st.installed || !!document.getElementById('dsh-terminal').firstChild);
+    if (isApp && hasLogin) details.open = false;
     if (!login.hidden) {
         document.getElementById('dsh-login-url').textContent = url;
         document.getElementById('dsh-open').href = url;
@@ -3552,6 +3558,8 @@ function renderDshStatus() {
         tokenBtn.onclick = () => copyText(token, 'dsh token');
     }
 }
+
+document.getElementById('dsh-log-details').addEventListener('toggle', () => setTimeout(() => termResize(dshSession), 30));
 
 function browseDshCwd() {
     openFileBrowser('dsh-cwd', 'dir');

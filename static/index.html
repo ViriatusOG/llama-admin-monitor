@@ -608,13 +608,16 @@
                         <button class="btn btn-sm" type="button" id="dsh-copy-token">Copy token</button>
                     </div>
                 </div>
-                <div class="pi-terminal-wrap" id="dsh-terminal-wrap">
-                    <div class="pi-terminal" id="dsh-terminal"></div>
-                    <div class="empty-state pi-terminal-empty" id="dsh-terminal-empty">
-                        <div class="empty-state-title">No dsh session</div>
-                        <p>Pick a workspace directory and press <strong>Start dsh</strong>. Its output appears here, and the login URL above once it is up.</p>
+                <details class="dsh-log" id="dsh-log-details" open>
+                    <summary>dsh output</summary>
+                    <div class="pi-terminal-wrap dsh-terminal-wrap" id="dsh-terminal-wrap">
+                        <div class="pi-terminal" id="dsh-terminal"></div>
+                        <div class="empty-state pi-terminal-empty" id="dsh-terminal-empty">
+                            <div class="empty-state-title">No dsh session</div>
+                            <p>Pick a workspace directory and press <strong>Start dsh</strong>. Its output appears here, and the login URL above once it is up.</p>
+                        </div>
                     </div>
-                </div>
+                </details>
             </div>
         </div>
 

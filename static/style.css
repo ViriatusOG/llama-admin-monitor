@@ -783,3 +783,6 @@ details.monitor-output-card:not([open]) > summary .details-chevron {
 .dsh-login > div:first-child { min-width: 0; flex: 1 1 320px; display: grid; gap: 4px; }
 .dsh-login-url { font-size: 12.5px; color: var(--fg-bright); overflow-wrap: anywhere; user-select: all; }
 .dsh-login-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.dsh-log > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--fg-muted); user-select: none; }
+.dsh-log[open] > summary { margin-bottom: var(--space-2); }
+.dsh-terminal-wrap { height: 360px; min-height: 240px; }
