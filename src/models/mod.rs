@@ -275,7 +275,10 @@ mod tests {
     #[test]
     fn projectors_pair_by_repo_then_by_name() {
         let mut models = vec![
-            discovered("gemma-3-12b-it-Q6_K.gguf", Some("unsloth/gemma-3-12b-it-GGUF")),
+            discovered(
+                "gemma-3-12b-it-Q6_K.gguf",
+                Some("unsloth/gemma-3-12b-it-GGUF"),
+            ),
             discovered("mmproj-F16.gguf", Some("unsloth/gemma-3-12b-it-GGUF")),
             discovered("Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf", None),
             discovered("mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf", None),
@@ -288,7 +291,10 @@ mod tests {
             models[2].projector.as_deref(),
             Some("mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf")
         );
-        assert_eq!(models[3].pairs_with, vec!["Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"]);
+        assert_eq!(
+            models[3].pairs_with,
+            vec!["Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"]
+        );
         assert_eq!(models[4].projector, None);
     }
 
