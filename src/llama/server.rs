@@ -400,6 +400,14 @@ pub fn diagnose_exit(recent: &[String]) -> Option<String> {
             "the model plus its KV cache does not fit in the selected device's memory. Lower the \
              context size, quantise the KV cache (q8_0), pick a smaller quant, or add a device",
         )
+    } else if joined.contains("does not support split buffers") {
+        Some(
+            "split mode 'row' only works on CUDA; set GPU distribution -> Split mode to 'layer'              (or leave it blank) for Vulkan and ROCm builds",
+        )
+    } else if joined.contains("invalid device") || joined.contains("no device named") {
+        Some(
+            "the preset's Devices do not exist in this build (a CUDA build lists CUDA0, a Vulkan              build Vulkan0...); re-pick them under GPU distribution -> Devices",
+        )
     } else if joined.contains("unknown model architecture")
         || joined.contains("unknown architecture")
     {
@@ -689,6 +697,18 @@ mod tests {
             "{d}"
         );
         assert!(d.contains("does not fit"), "{d}");
+    }
+
+    #[test]
+    fn diagnoses_row_split_on_vulkan() {
+        let recent = vec![
+            "0.00.483.274 E llama_model_load: error loading model: device Vulkan0 does not support split buffers".to_string(),
+            "0.00.483.295 E llama_model_load_from_file_impl: failed to load model".to_string(),
+            "0.00.759.180 E srv  llama_server: exiting due to model loading error".to_string(),
+        ];
+        let d = diagnose_exit(&recent).unwrap();
+        assert!(d.starts_with("llama_model_load: error loading model"), "{d}");
+        assert!(d.contains("Split mode to 'layer'"), "{d}");
     }
 
     #[test]
