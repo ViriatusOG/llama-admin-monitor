@@ -217,7 +217,7 @@ fn parse_lspci_name(line: &str) -> Option<String> {
 /// when that is a real product name, otherwise the device id looked up in
 /// the built-in table, then the system's pci.ids via lspci, and finally the
 /// generic name tagged with the gfx target and device id so two unknown
-/// cards are at least distinguishable.
+/// cards are at least distinguishable. `None` when rocm-smi gave no name.
 fn amd_display_name(card: &serde_json::Value) -> Option<String> {
     let series = card
         .get("Card Series")
@@ -238,11 +238,11 @@ fn amd_display_name(card: &serde_json::Value) -> Option<String> {
     if let Some(name) = bus.and_then(lspci_name) {
         return Some(name);
     }
-    let base = if series.is_empty() {
-        "AMD Radeon Graphics"
-    } else {
-        series
-    };
+    if series.is_empty() {
+        // Nothing to go on: let the caller use rocm-smi's own key (card0...).
+        return None;
+    }
+    let base = series;
     let gfx = card
         .get("GFX Version")
         .and_then(|v| v.as_str())
