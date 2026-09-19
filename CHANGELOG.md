@@ -14,6 +14,10 @@ Backwards compatibility is preserved unless explicitly noted.
 ### Added (GPU cards)
 - AMD GPU cards show all three temperature sensors rocm-smi reports: **Hotspot** (junction, the headline value and what the card throttles on), **Edge** and **Memory**. Hotspot and memory use looser warning thresholds (95/105 C) than edge and NVIDIA's single sensor (80/90 C), matching what those sensors normally run at.
 
+### Changed
+- Monitor cards keep their drag grip, Hide and icon on the title line; a long device name wraps inside its own column instead of pushing the tools down. GPU card titles drop the vendor prefix the kicker already shows ("Radeon AI PRO R9700" under "GPU 0 · AMD"; the full name is in the tooltip).
+- The GPU Memory Pool card is the same size as the GPU cards and lists every device's used/total VRAM under the pooled bar, in the vendor colours of the legend; the total moved from the header badge to a "Used" row.
+
 ### Fixed
 - Update checks compared release versions by GitHub's listing order, which sorts by tag name — so `beta.9` outranked `beta.12` and a fresh install was offered a downgrade. Versions are now parsed (`YYYY.M.D[-beta.N]`) and compared numerically; an update is only offered when the release is actually newer.
 - The GPU environment section in Settings (rocminfo detection) resolves generic "AMD Radeon Graphics" names from the chip id the same way the monitor cards do.

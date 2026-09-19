@@ -950,6 +950,12 @@ function vendorInfo(cardName) {
     return { key: 'other', color: 'var(--vendor-other)', label: cardName };
 }
 
+// The card kicker already names the vendor, so the title drops it:
+// "AMD Radeon AI PRO R9700" reads as "Radeon AI PRO R9700".
+function shortCardName(cardName) {
+    return cardName.replace(/^(AMD|NVIDIA|Intel(\(R\))?)\s+/i, '');
+}
+
 const VRAM_CONTEXT_COLOR = 'var(--vram-context)';
 
 function renderVramBar(d) {
@@ -967,7 +973,8 @@ function renderVramBar(d) {
         return;
     }
     if (totalBadge) {
-        totalBadge.textContent = (usedVramMb / 1024).toFixed(1) + ' / ' + (totalVramMb / 1024).toFixed(1) + ' GB';
+        const pct = Math.round((usedVramMb / totalVramMb) * 100);
+        totalBadge.textContent = (usedVramMb / 1024).toFixed(1) + ' / ' + (totalVramMb / 1024).toFixed(1) + ' GB \u00b7 ' + pct + '%';
     }
 
     // Try to attribute used VRAM to model weights vs context/overhead,
@@ -1005,7 +1012,7 @@ function renderVramBar(d) {
             segments.push({
                 widthPct: (weightMb / totalVramMb) * 100,
                 color: vendor.color,
-                label: (weightMb / 1024).toFixed(1) + ' / ' + gpuTotalGb + ' GB',
+                label: (weightMb / 1024).toFixed(1) + ' GB',
                 title: card + ': ' + (weightMb / 1024).toFixed(1) + 'GB of ' + gpuTotalGb + 'GB used (weights/other)',
             });
         }
@@ -1023,21 +1030,38 @@ function renderVramBar(d) {
     const freeGb = ((totalVramMb * freePct / 100) / 1024).toFixed(1);
 
     // Only render text inside a segment when it is wide enough to fit,
-    // otherwise the label overflows into neighbouring segments.
-    const segText = (seg) => seg.widthPct >= 12 ? seg.label : '';
+    // otherwise the label overflows into neighbouring segments. The exact
+    // figures live in the per-device rows and tooltips.
+    const segText = (seg) => seg.widthPct >= 20 ? seg.label : '';
 
     setBars(segments.map(seg =>
         '<div class="vram-seg" style="width:' + seg.widthPct.toFixed(2) + '%; background:' + seg.color + ';" title="' + escapeHtml(seg.title) + '">' +
         '<span class="vram-seg-label">' + segText(seg) + '</span></div>'
     ).join('') +
         '<div class="vram-seg vram-seg-free" style="width:' + freePct.toFixed(2) + '%;" title="Free: ' + freeGb + 'GB">' +
-        '<span class="vram-seg-label vram-seg-label-free">' + (freePct >= 12 ? freeGb + ' GB free' : '') + '</span></div>');
+        '<span class="vram-seg-label vram-seg-label-free">' + (freePct >= 20 ? freeGb + ' GB free' : '') + '</span></div>');
 
     const legendItems = Array.from(legendVendors.entries()).map(([label, color]) =>
         '<span class="vram-legend-item"><span class="vram-legend-swatch" style="background:' + color + ';"></span>' + escapeHtml(label) + '</span>');
     legendItems.push('<span class="vram-legend-item"><span class="vram-legend-swatch" style="background:' + VRAM_CONTEXT_COLOR + ';"></span>Context/KV (est.)</span>');
     legendItems.push('<span class="vram-legend-item"><span class="vram-legend-swatch vram-legend-swatch-free"></span>Free (' + ((totalVramMb - usedVramMb) / 1024).toFixed(1) + 'GB)</span>');
     setLegends(legendItems.join(''));
+
+    // Per-device breakdown under the pooled bar, in the same vendor colours.
+    const perGpu = document.getElementById('vram-per-gpu');
+    if (perGpu) {
+        perGpu.innerHTML = gpuList.map(([card, m]) => {
+            const vendor = vendorInfo(card);
+            const used = m.vram_used || 0;
+            const total = m.vram_total || 0;
+            const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+            return '<div>' +
+                '<div class="monitor-metric-row"><span class="monitor-metric-label" title="' + escapeHtml(card) + '">' + escapeHtml(shortCardName(card)) + '</span>' +
+                '<span class="monitor-metric-reading" title="' + pct + '% used">' + (used / 1024).toFixed(1) + ' / ' + (total / 1024).toFixed(1) + ' GB</span></div>' +
+                '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%; background:' + vendor.color + ';"></div></div>' +
+                '</div>';
+        }).join('');
+    }
 }
 
 // --- GPU cards (one per device) ---
@@ -1079,7 +1103,7 @@ function renderGpuCards(gpuList) {
             return '<div class="card monitor-gpu-card" data-gpu-index="' + i + '" data-monitor-key="gpu:' + i + '" data-monitor-label="GPU ' + i + '">' +
                 '<div class="card-header">' +
                     '<div><div class="card-kicker">GPU ' + i + ' \u00b7 ' + escapeHtml(vendor.label) + '</div>' +
-                    '<div class="card-title gpu-name">' + escapeHtml(card) + '</div></div>' +
+                    '<div class="card-title gpu-name" title="' + escapeHtml(card) + '">' + escapeHtml(shortCardName(card)) + '</div></div>' +
                     cardTools('gpu:' + i, 'GPU ' + i) +
                     '<div class="card-icon icon-' + vendor.key + '"><span class="icon icon-lg">' + GPU_ICON + '</span></div></div>' +
                 '</div>' +
@@ -1109,8 +1133,9 @@ function renderGpuCards(gpuList) {
         const el = grid.querySelector('[data-gpu-index="' + i + '"]');
         if (!el) return;
         const nameEl = el.querySelector('.gpu-name');
-        if (nameEl.textContent !== card) {
-            nameEl.textContent = card;
+        if (nameEl.title !== card) {
+            nameEl.title = card;
+            nameEl.textContent = shortCardName(card);
             const vendor = vendorInfo(card);
             el.querySelector('.card-kicker').textContent = 'GPU ' + i + ' \u00b7 ' + vendor.label;
             el.querySelector('.card-icon').className = 'card-icon icon-' + vendor.key;
