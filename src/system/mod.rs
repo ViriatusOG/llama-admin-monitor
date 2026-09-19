@@ -347,8 +347,7 @@ pub struct TempReading {
 /// core. ARM boards usually have a `cpu_thermal` or `soc_thermal` driver.
 pub fn pick_cpu_temp(readings: &[TempReading]) -> Option<f32> {
     for amd in ["k10temp", "zenpower"] {
-        if let Some(t) =
-            labelled(readings, amd, "Tdie").or_else(|| labelled(readings, amd, "Tctl"))
+        if let Some(t) = labelled(readings, amd, "Tdie").or_else(|| labelled(readings, amd, "Tctl"))
         {
             return Some(t);
         }
@@ -361,7 +360,13 @@ pub fn pick_cpu_temp(readings: &[TempReading]) -> Option<f32> {
     {
         return Some(t);
     }
-    for arm in ["cpu_thermal", "cpu-thermal", "soc_thermal", "soc-thermal", "acpitz"] {
+    for arm in [
+        "cpu_thermal",
+        "cpu-thermal",
+        "soc_thermal",
+        "soc-thermal",
+        "acpitz",
+    ] {
         if let Some(t) = hottest(readings, arm) {
             return Some(t);
         }
@@ -383,7 +388,9 @@ fn labelled(readings: &[TempReading], driver: &str, label: &str) -> Option<f32> 
 }
 
 fn hottest(readings: &[TempReading], driver: &str) -> Option<f32> {
-    by_driver(readings, driver).map(|r| r.celsius).reduce(f32::max)
+    by_driver(readings, driver)
+        .map(|r| r.celsius)
+        .reduce(f32::max)
 }
 
 /// Collects every `temp*_input` under /sys/class/hwmon with its driver

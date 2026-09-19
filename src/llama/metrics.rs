@@ -70,11 +70,17 @@ pub struct SlotSample {
 
 impl SlotSample {
     pub fn from_json(v: &serde_json::Value) -> Option<Self> {
-        let next = v.get("next_token").and_then(|n| n.as_array()).and_then(|a| a.first());
+        let next = v
+            .get("next_token")
+            .and_then(|n| n.as_array())
+            .and_then(|a| a.first());
         Some(Self {
             id: v.get("id")?.as_u64()?,
             id_task: v.get("id_task").and_then(|t| t.as_u64()),
-            is_processing: v.get("is_processing").and_then(|b| b.as_bool()).unwrap_or(false),
+            is_processing: v
+                .get("is_processing")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false),
             n_prompt_processed: v
                 .get("n_prompt_tokens_processed")
                 .and_then(|n| n.as_u64())
@@ -106,7 +112,11 @@ pub struct SlotRates {
 
 /// Half-weight exponential smoothing; the first reading is taken as is.
 fn smooth(old: f64, new: f64) -> f64 {
-    if old > 0.0 { old * 0.5 + new * 0.5 } else { new }
+    if old > 0.0 {
+        old * 0.5 + new * 0.5
+    } else {
+        new
+    }
 }
 
 impl SlotRates {
@@ -129,7 +139,9 @@ impl SlotRates {
             else {
                 continue;
             };
-            prompt_tokens += cur.n_prompt_processed.saturating_sub(prev.n_prompt_processed);
+            prompt_tokens += cur
+                .n_prompt_processed
+                .saturating_sub(prev.n_prompt_processed);
             gen_tokens += cur.n_decoded.saturating_sub(prev.n_decoded);
         }
 
