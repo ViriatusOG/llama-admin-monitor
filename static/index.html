@@ -751,6 +751,11 @@
                 <label class="modal-field" title="Layer distribution ratio across GPUs, slash-separated (e.g. '65/35' for 2 GPUs, '7/8/8/8' for 4). Commas are parsed as a single value and put the whole model on the first GPU. Leave empty for single GPU.">Tensor split (-ts)
                     <input type="text" id="modal-tensor-split" placeholder="7/8/8/8">
                 </label>
+                <div class="modal-field" title="Which GPUs llama-server may offload to (--device). None ticked = all devices. Names come from llama-server --list-devices.">Devices
+                    <div class="device-picker" id="modal-devices">
+                        <span class="help-text">Loading devices from llama-server&hellip;</span>
+                    </div>
+                </div>
                 <label class="modal-field" title="Vulkan runs across all GPUs. CUDA is NVIDIA-only but noticeably faster -- use it for models that fit on the NVIDIA card alone.">Backend
                     <select id="modal-backend" onchange="onBackendChange()">
                         <option value="vulkan">Vulkan (all GPUs)</option>

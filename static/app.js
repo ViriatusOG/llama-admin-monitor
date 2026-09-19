@@ -361,6 +361,50 @@ function fileBrowserSelect(path) {
     closeFileBrowser();
 }
 
+// --- Device picker (preset editor) ---
+
+let deviceListCache = null;
+
+function selectedDevices() {
+    const ticked = Array.from(document.querySelectorAll('#modal-devices input[type="checkbox"]:checked')).map(i => i.value);
+    if (ticked.length) return ticked.join(',');
+    // Devices the preset names that the list did not offer (binary changed,
+    // list failed) are kept verbatim so saving never silently drops them.
+    return document.getElementById('modal-devices').dataset.unlisted || '';
+}
+
+async function loadDevicePicker(selected) {
+    const host = document.getElementById('modal-devices');
+    const chosen = selected.split(',').map(s => s.trim()).filter(Boolean);
+    host.dataset.unlisted = '';
+    if (!deviceListCache) {
+        host.innerHTML = '<span class="help-text">Loading devices from llama-server\u2026</span>';
+        try {
+            const res = await fetch('/api/devices');
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            deviceListCache = data.devices || [];
+        } catch (err) {
+            host.innerHTML = '<span class="help-text">Could not list devices: ' + escapeHtml(err.message) + (chosen.length ? ' \u00b7 keeping: ' + escapeHtml(chosen.join(', ')) : '') + '</span>';
+            host.dataset.unlisted = chosen.join(',');
+            return;
+        }
+    }
+    if (deviceListCache.length === 0) {
+        host.innerHTML = '<span class="help-text">llama-server reports no offload devices (CPU build?).</span>';
+        host.dataset.unlisted = chosen.join(',');
+        return;
+    }
+    const known = new Set(deviceListCache.map(d => d.id));
+    host.dataset.unlisted = chosen.filter(c => !known.has(c)).join(',');
+    host.innerHTML = deviceListCache.map(d =>
+        '<label class="device-option"><input type="checkbox" value="' + escapeHtml(d.id) + '"' + (chosen.includes(d.id) ? ' checked' : '') + '>' +
+        '<span class="mono">' + escapeHtml(d.id) + '</span><span>' + escapeHtml(d.name) + '</span>' +
+        (d.total_mib ? '<span class="help-text">' + (d.total_mib / 1024).toFixed(1) + ' GB</span>' : '') + '</label>'
+    ).join('') + '<span class="help-text">None ticked = all devices. Tick one card to keep a model off the other.</span>' +
+    (host.dataset.unlisted ? '<span class="help-text">Not offered by this binary but kept: ' + escapeHtml(host.dataset.unlisted) + '</span>' : '');
+}
+
 function onBackendChange() {
     const isCuda = document.getElementById('modal-backend').value === 'cuda';
     const ts = document.getElementById('modal-tensor-split');
@@ -1646,6 +1690,7 @@ function presetChips(p) {
     const chips = [];
     if (p.context_size) chips.push('ctx ' + p.context_size.toLocaleString());
     if (p.gpu_layers != null) chips.push('ngl ' + p.gpu_layers);
+    if (p.devices) chips.push('dev ' + p.devices);
     if (p.tensor_split) chips.push('ts ' + p.tensor_split);
     if (p.backend) chips.push(p.backend);
     if (p.ctk || p.ctv) chips.push('kv ' + (p.ctk || 'f16') + '/' + (p.ctv || 'f16'));
@@ -1740,6 +1785,7 @@ function openPresetModal(mode, id) {
         // GPU
         setVal('modal-tensor-split', p.tensor_split);
         setVal('modal-backend', p.backend || 'vulkan');
+        loadDevicePicker(p.devices || '');
         setOpt('modal-split-mode', p.split_mode);
         numOrEmpty('modal-main-gpu', p.main_gpu);
         // Threading
@@ -1768,6 +1814,7 @@ function openPresetModal(mode, id) {
         setVal('modal-batch-size', 2048);
         setVal('modal-ubatch-size', 2048);
         setVal('modal-parallel-slots', 1);
+        loadDevicePicker('');
     }
     onBackendChange();
 
@@ -1813,6 +1860,7 @@ async function savePreset(event) {
         parallel_slots: parseInt(document.getElementById('modal-parallel-slots').value) || 1,
         // GPU
         tensor_split: strVal('modal-tensor-split'),
+        devices: selectedDevices(),
         backend: strVal('modal-backend') || 'vulkan',
         split_mode: strVal('modal-split-mode'),
         main_gpu: intOrNull('modal-main-gpu'),
@@ -1993,6 +2041,7 @@ function getConfig() {
         ctk: p.ctk || 'q8_0',
         ctv: p.ctv || 'f16',
         tensor_split: p.tensor_split || '',
+        devices: p.devices || '',
         batch_size: p.batch_size || 2048,
         ubatch_size: p.ubatch_size || p.batch_size || 2048,
         no_mmap: !!p.no_mmap,

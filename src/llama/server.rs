@@ -34,6 +34,8 @@ pub struct ServerConfig {
     #[serde(default)]
     pub backend: String,
     #[serde(default)]
+    pub devices: String,
+    #[serde(default)]
     pub split_mode: String,
     #[serde(default)]
     pub main_gpu: Option<u32>,
@@ -183,6 +185,13 @@ pub async fn start_server(
     // Flash attention
     if !config.flash_attn.is_empty() {
         cmd.arg("-fa").arg(&config.flash_attn);
+    }
+
+    // Device selection: restricts offloading to the named ggml devices
+    // (`llama-server --list-devices`), e.g. just the NVIDIA card.
+    let devices = config.devices.trim();
+    if !devices.is_empty() {
+        cmd.arg("--device").arg(devices);
     }
 
     // GPU distribution -- a CUDA build only ever sees the NVIDIA card,
@@ -368,6 +377,89 @@ pub async fn start_server(
     Ok(())
 }
 
+/// One offload device as printed by `llama-server --list-devices`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct GgmlDevice {
+    pub id: String,
+    pub name: String,
+    pub total_mib: Option<u64>,
+    pub free_mib: Option<u64>,
+}
+
+/// Parses `--list-devices` output: lines like
+/// `  Vulkan1: NVIDIA GeForce RTX 3080 (10240 MiB, 9800 MiB free)`.
+pub fn parse_device_list(text: &str) -> Vec<GgmlDevice> {
+    text.lines()
+        .filter_map(|raw| {
+            // Device lines are indented; backend chatter ("ggml_vulkan: ...")
+            // and the header are not.
+            if !raw.starts_with("  ") {
+                return None;
+            }
+            let (id, rest) = raw.trim().split_once(": ")?;
+            if id.contains(' ') || id.is_empty() {
+                return None;
+            }
+            let (name, mem) = match rest.rsplit_once(" (") {
+                Some((n, m)) if m.ends_with(')') => (n, Some(m.trim_end_matches(')'))),
+                _ => (rest, None),
+            };
+            let mut nums = mem
+                .unwrap_or("")
+                .split(',')
+                .filter_map(|part| part.trim().split(' ').next()?.parse::<u64>().ok());
+            Some(GgmlDevice {
+                id: id.to_string(),
+                name: name.trim().to_string(),
+                total_mib: nums.next(),
+                free_mib: nums.next(),
+            })
+        })
+        .collect()
+}
+
+/// Runs `llama-server --list-devices` with the same environment a launch
+/// would get, so the names match what `--device` accepts.
+pub async fn list_devices(state: &AppState, app_config: &AppConfig) -> Result<Vec<GgmlDevice>> {
+    let server_path = &app_config.llama_server_path;
+    if server_path.components().count() > 1 {
+        check_executable(server_path)?;
+    }
+    let mut cmd = TokioCommand::new(server_path);
+    cmd.arg("--list-devices");
+    if app_config.llama_server_cwd.is_dir() {
+        cmd.current_dir(&app_config.llama_server_cwd);
+    }
+    let gpu_env = state.gpu_env.lock().unwrap().clone();
+    let cwd = app_config.llama_server_cwd.display().to_string();
+    match app_config.gpu_backend.as_str() {
+        "nvidia" => {
+            for (key, val) in build_nvidia_env(&gpu_env) {
+                cmd.env(key, val);
+            }
+        }
+        "none" => {}
+        _ => {
+            for (key, val) in build_rocm_env(&gpu_env, &cwd) {
+                cmd.env(key, val);
+            }
+        }
+    }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output())
+        .await
+        .map_err(|_| anyhow::anyhow!("llama-server --list-devices timed out"))??;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let devices = parse_device_list(&text);
+    if devices.is_empty() && !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "llama-server --list-devices failed: {}",
+            stderr.lines().last().unwrap_or("unknown error")
+        );
+    }
+    Ok(devices)
+}
+
 /// Explains the usual reasons a configured binary cannot run, before the
 /// OS reduces them all to "Permission denied".
 fn check_executable(path: &std::path::Path) -> Result<()> {
@@ -434,4 +526,27 @@ pub async fn stop_server(state: &AppState) -> Result<()> {
     state.push_log("[monitor] Server stopped.".into());
     crate::applog::info("llama-server stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_devices_parses_names_and_memory() {
+        let text = concat!(
+            "ggml_vulkan: Found 2 Vulkan devices:\n",
+            "Available devices:\n",
+            "  Vulkan0: AMD Radeon RX 9070 XT (RADV GFX1201) (16368 MiB, 16000 MiB free)\n",
+            "  Vulkan1: NVIDIA GeForce RTX 3080 (10240 MiB, 9800 MiB free)\n",
+        );
+        let devices = parse_device_list(text);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "Vulkan0");
+        assert_eq!(devices[0].name, "AMD Radeon RX 9070 XT (RADV GFX1201)");
+        assert_eq!(devices[0].total_mib, Some(16368));
+        assert_eq!(devices[1].id, "Vulkan1");
+        assert_eq!(devices[1].free_mib, Some(9800));
+        assert!(parse_device_list("Available devices:\n  (none)\n").is_empty());
+    }
 }

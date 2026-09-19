@@ -541,6 +541,12 @@ input.field-error:focus { box-shadow: 0 0 0 3px var(--red-subtle); }
 .modal-checks .chk { font-size: 12.5px; color: var(--fg); display: flex; align-items: center; gap: 6px; cursor: pointer; font-family: var(--mono); }
 .modal-checks input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .hf-badge { margin-left: 5px; color: var(--green); font-family: var(--mono); }
+.device-picker { display: flex; flex-direction: column; gap: var(--space-1); }
+.device-option { display: flex; align-items: center; gap: var(--space-2); font-size: 12.5px; color: var(--fg); text-transform: none; letter-spacing: 0; font-weight: 400; cursor: pointer; }
+.device-option input { width: 15px; height: 15px; accent-color: var(--accent); }
+.device-option .mono { color: var(--accent-text); }
+.device-option .help-text { margin-left: auto; font-size: 11px; }
+.device-picker .help-text { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .summary-hint { font-weight: 400; color: var(--fg-faint); font-size: 11px; text-transform: none; letter-spacing: 0; }
 
 .modal-section { border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-3); background: var(--inset-xs); transition: border-color var(--ease-fast); }

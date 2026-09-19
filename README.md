@@ -213,7 +213,7 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 - **Model & memory** — model path (with file browser and HF download), multimodal projector (`--mmproj`) for vision models, GPU layers, no-mmap, mlock
 - **Context & KV cache** — context size, K/V quantisation (`f16`/`q8_0`), flash attention
 - **Batching & slots** — batch size, micro-batch, parallel slots
-- **GPU distribution** — tensor split, backend (Vulkan/CUDA), split mode, main GPU
+- **GPU distribution** — devices to offload to (from `llama-server --list-devices`; tick one card to keep a model off the others), tensor split, backend (Vulkan/CUDA), split mode, main GPU
 - **Threading** — generation and batch thread counts
 - **Rope scaling** — YaRN/linear scaling, frequency base/scale
 - **Speculative decoding** — ngram-mod, draft model, draft min/max

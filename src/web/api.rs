@@ -39,9 +39,14 @@ pub fn api_routes(
     let v1_proxy = api_v1_proxy(state.clone());
     let app_update_check = api_app_update_check();
     let app_logs = api_app_logs();
+    let devices = api_devices(state.clone(), app_config.clone());
     let app_update_apply = api_app_update_apply(state);
     // Boxed so the outer .or() chain stays shallow enough for the compiler.
-    let app = app_update_check.or(app_update_apply).or(app_logs).boxed();
+    let app = app_update_check
+        .or(app_update_apply)
+        .or(app_logs)
+        .or(devices)
+        .boxed();
 
     start
         .or(stop)
@@ -949,5 +954,31 @@ fn api_app_logs() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Re
                 "latest_seq": crate::applog::latest_seq(),
                 "entries": entries,
             }))
+        })
+}
+
+/// Offload devices as llama-server sees them, for the preset editor's
+/// device picker. Honours the UI-configured binary path like a launch.
+fn api_devices(
+    state: AppState,
+    app_config: Arc<AppConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("api" / "devices")
+        .and(warp::get())
+        .and(warp::any().map(move || (state.clone(), app_config.clone())))
+        .and_then(|(state, app_config): (AppState, Arc<AppConfig>)| async move {
+            let ui = state.ui_settings.lock().unwrap().clone();
+            let mut eff_config = (*app_config).clone();
+            if !ui.llama_server_path.is_empty() {
+                eff_config.llama_server_path = PathBuf::from(&ui.llama_server_path);
+            }
+            if !ui.llama_server_cwd.is_empty() {
+                eff_config.llama_server_cwd = PathBuf::from(&ui.llama_server_cwd);
+            }
+            let reply = match server::list_devices(&state, &eff_config).await {
+                Ok(devices) => warp::reply::json(&serde_json::json!({"devices": devices})),
+                Err(e) => warp::reply::json(&serde_json::json!({"error": format!("{e:#}")})),
+            };
+            Ok::<_, warp::Rejection>(reply)
         })
 }
