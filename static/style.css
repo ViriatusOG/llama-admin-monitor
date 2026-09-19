@@ -763,3 +763,17 @@ details.monitor-output-card:not([open]) > summary .details-chevron {
     .toast-container { top: calc(var(--space-3) + 44px); left: var(--space-3); right: var(--space-3); }
     .toast { min-width: 0; width: 100%; max-width: none; }
 }
+
+/* --- Pi page: a terminal card --- */
+.pi-card { display: flex; flex-direction: column; gap: var(--space-3); }
+.pi-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.pi-field { display: grid; gap: var(--space-1); flex: 1 1 320px; min-width: 0; }
+.pi-field-row { display: flex; gap: var(--space-2); }
+.pi-field-row input { flex: 1 1 auto; min-width: 0; font-family: var(--mono); }
+.pi-buttons { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.pi-terminal-wrap { position: relative; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: #0b0d14; min-height: 420px; height: calc(100vh - 340px); overflow: hidden; }
+.pi-terminal { position: absolute; inset: 8px; }
+.pi-terminal-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: var(--space-4); text-align: center; }
+.pi-terminal-empty[hidden] { display: none; }
+.pi-terminal .xterm { height: 100%; }
+.pi-terminal .xterm-viewport { border-radius: var(--radius-sm); }

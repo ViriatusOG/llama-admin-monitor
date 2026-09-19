@@ -13,10 +13,11 @@ pub fn build_routes(
     app_config: Arc<AppConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let ws = ws::ws_route(state.clone());
+    let pi_ws = ws::pi_ws_route(state.clone());
     let api = api::api_routes(state, app_config);
     let static_files = static_routes();
 
-    ws.or(api).or(static_files)
+    pi_ws.or(ws).or(api).or(static_files)
 }
 
 /// The dashboard HTML with the build's version and track filled in. Both
@@ -59,6 +60,15 @@ fn static_routes() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::R
     let icon = warp::path("icon.svg")
         .and(warp::get())
         .map(|| asset(static_assets::ICON_SVG, "image/svg+xml"));
+    let xterm_js = warp::path!("vendor" / "xterm.js")
+        .and(warp::get())
+        .map(|| asset(static_assets::XTERM_JS, "application/javascript"));
+    let xterm_css = warp::path!("vendor" / "xterm.css")
+        .and(warp::get())
+        .map(|| asset(static_assets::XTERM_CSS, "text/css"));
+    let xterm_fit = warp::path!("vendor" / "xterm-addon-fit.js")
+        .and(warp::get())
+        .map(|| asset(static_assets::XTERM_FIT_JS, "application/javascript"));
 
     index
         .or(tokens)
@@ -68,6 +78,9 @@ fn static_routes() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::R
         .or(manifest)
         .or(sw)
         .or(icon)
+        .or(xterm_js)
+        .or(xterm_css)
+        .or(xterm_fit)
 }
 
 /// Serves an embedded asset. `no-cache` makes browsers revalidate on every

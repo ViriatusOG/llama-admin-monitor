@@ -71,3 +71,62 @@ pub fn ws_route(
         })
     })
 }
+
+/// Terminal bridge for the pi page: PTY output goes out as binary frames
+/// (scrollback first, then live), and the page sends either binary
+/// keystrokes or a JSON text frame `{"resize": [cols, rows]}`.
+pub fn pi_ws_route(
+    state: AppState,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("ws" / "pi").and(warp::ws()).map(move |ws: Ws| {
+        let state = state.clone();
+        ws.on_upgrade(move |socket| async move {
+            let (mut ws_tx, mut ws_rx) = socket.split();
+            let session = state.pi.lock().unwrap().clone();
+            let Some(session) = session else {
+                let _ = ws_tx
+                    .send(Message::text(r#"{"error":"no pi session"}"#))
+                    .await;
+                return;
+            };
+            let (scrollback, mut rx) = session.subscribe();
+            if !scrollback.is_empty() && ws_tx.send(Message::binary(scrollback)).await.is_err() {
+                return;
+            }
+            let out = tokio::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(chunk) => {
+                            if ws_tx.send(Message::binary(chunk)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => break,
+                    }
+                }
+            });
+            while let Some(Ok(msg)) = ws_rx.next().await {
+                if msg.is_binary() {
+                    let _ = session.write_input(msg.as_bytes());
+                } else if msg.is_text() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(msg.to_str().unwrap_or(""))
+                        && let Some(size) = v.get("resize").and_then(|r| r.as_array())
+                        && size.len() == 2
+                    {
+                        let cols = size[0].as_u64().unwrap_or(80) as u16;
+                        let rows = size[1].as_u64().unwrap_or(24) as u16;
+                        let _ = session.resize(cols, rows);
+                    } else if let Ok(v) = serde_json::from_str::<serde_json::Value>(msg.to_str().unwrap_or(""))
+                        && let Some(text) = v.get("input").and_then(|t| t.as_str())
+                    {
+                        let _ = session.write_input(text.as_bytes());
+                    }
+                } else if msg.is_close() {
+                    break;
+                }
+            }
+            out.abort();
+        })
+    })
+}

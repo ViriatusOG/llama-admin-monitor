@@ -61,6 +61,7 @@ Same dashboard in the **Mint** light theme:
 - **Five themes** — Tokyo and Nebula (dark), Graphite (mid-tone), Cappuccino and Mint (light), picked from the sidebar and remembered per browser
 - **OpenAI-compatible proxy** — everything under `/v1/*` is forwarded to the running llama-server, so clients such as SillyTavern or the OpenAI SDKs can point at `http://<monitor>:7778/v1` and follow whichever model is loaded
 - **Integrated chat** — streaming chat through that proxy, with collapsible reasoning blocks and Markdown rendering
+- **Pi coding agent** — [pi](https://pi.dev) in a terminal on the server, embedded in the dashboard and pointed at the loaded model through the same proxy (a `llama-admin-monitor` provider is written to `~/.pi/agent/models.json` on every start). Pick a working directory and Start; the session keeps running between page visits. One-click install when pi is missing
 - **In-app updates** — Settings → App Updates installs the newest GitHub release for your track (stable `main` or pre-release `beta`) and restarts; see [Updates and release tracks](#updates-and-release-tracks)
 - **File browser** for binaries, directories and models; **persistent settings** (preset, port, paths, models directory); **responsive** layout with a navigation drawer on phones; installable as a PWA
 
@@ -222,6 +223,7 @@ The sidebar groups the workspace the way LLama-GUI does:
 - **Tune → Presets** — the saved configurations; the active one is what the sidebar's Start button launches.
 - **Tune → Benchmark** — tensor-split (and batch/thread) sweeps with one-click apply.
 - **Interact → Chat** — streaming chat against the running server.
+- **Interact → Pi** — the pi coding agent in an embedded terminal, working in a directory of your choice against the loaded model.
 - **Library → Models** — the models directory with VRAM fit and Hugging Face provenance, download and delete.
 - **Library → Install** — prebuilt llama.cpp builds per backend, with update-in-place when upstream publishes a newer tag.
 
@@ -286,6 +288,11 @@ The preset editor groups llama.cpp parameters into collapsible sections:
 | `POST` | `/api/builds/remove` | Remove an installed build by id |
 | `POST` | `/api/builds/update` | Reinstall an installed build at the newest upstream tag; presets and Settings that used it are moved over and the old build is removed |
 | `POST` | `/api/builds/use` | Point Settings at an installed build |
+| `GET` | `/api/pi/status` | Whether pi is installed (path, version) and whether a session is running |
+| `POST` | `/api/pi/start` | Start pi in `{"cwd", "cols", "rows"}` after refreshing its models.json provider |
+| `POST` | `/api/pi/install` | Run pi's installer (`curl -fsSL https://pi.dev/install.sh \| sh`) in the terminal |
+| `POST` | `/api/pi/stop` | Kill the pi session |
+| `GET` | `/ws/pi` | Terminal WebSocket: binary frames are PTY output/keystrokes, text frames `{"input"}` or `{"resize":[cols,rows]}` |
 | `GET` | `/api/app/logs?after=N` | The monitor's own event log (entries newer than sequence N) |
 | `GET` | `/api/app/update/check` | Running version/track and the latest stable and beta releases |
 | `POST` | `/api/app/update/apply` | Install `{"track": "main"\|"beta"}` and restart; progress arrives via the WebSocket |
@@ -314,6 +321,7 @@ src/
   system/
     mod.rs             -- Host CPU / memory / disk sampler (/proc, df, dmidecode)
     disk.rs            -- Physical disk identity, hwmon temperature, SMART via smartctl
+  pi.rs                -- pi coding agent in a PTY (portable-pty), scrollback, models.json provider
   update.rs            -- Release-track updater: GitHub Releases, verify, swap, re-exec
   presets/
     mod.rs             -- ModelPreset, CRUD, file persistence

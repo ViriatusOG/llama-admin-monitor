@@ -8,6 +8,7 @@ mod config;
 mod gpu;
 mod llama;
 mod models;
+mod pi;
 mod presets;
 mod state;
 mod system;

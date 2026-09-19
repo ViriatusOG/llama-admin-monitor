@@ -7,6 +7,8 @@ and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on
 Backwards compatibility is preserved unless explicitly noted.
 
 ## [Unreleased]
+### Added
+- **Pi page** (sidebar → Interact → Pi): the [pi](https://pi.dev) coding agent running in a terminal on the server, embedded in the dashboard (xterm.js over a WebSocket-attached PTY). Pick a working directory, Start, and pi is launched with a `llama-admin-monitor` provider that the monitor writes into `~/.pi/agent/models.json`, pointing at the monitor's `/v1` proxy with whatever model is loaded. The session survives page changes and reloads (scrollback is replayed on reattach); Stop kills it. If pi is missing, **Install pi** runs pi's own installer in the same terminal. `POST /api/pi/start|stop|install`, `GET /api/pi/status`, `/ws/pi`.
 
 ## [1.0.0] - 2026-09-19
 First SemVer stable release; it carries everything from the `v2026.9.21` / `v2026.09.22` beta series below. In-app updates from `v2026.9.20` treat it as newer.

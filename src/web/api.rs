@@ -41,6 +41,7 @@ pub fn api_routes(
     let app_logs = api_app_logs();
     let devices = api_devices(state.clone(), app_config.clone());
     let builds = api_builds(state.clone(), app_config.clone());
+    let pi = api_pi(state.clone(), app_config.clone());
     let app_update_apply = api_app_update_apply(state);
     // Boxed so the outer .or() chain stays shallow enough for the compiler.
     let app = app_update_check
@@ -48,6 +49,7 @@ pub fn api_routes(
         .or(app_logs)
         .or(devices)
         .or(builds)
+        .or(pi)
         .boxed();
 
     start
@@ -1222,4 +1224,165 @@ fn api_builds(
         .or(remove)
         .or(use_build)
         .boxed()
+}
+
+/// The pi coding agent: status, start/stop in a PTY, and running pi's own
+/// installer in that PTY when it is missing.
+fn api_pi(
+    state: AppState,
+    app_config: Arc<AppConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    use crate::pi;
+
+    let status_state = state.clone();
+    let status = warp::path!("api" / "pi" / "status")
+        .and(warp::get())
+        .map(move || {
+            let mut st = pi::status(&status_state.pi);
+            // The default working directory is what Settings says, else home.
+            if st.cwd.is_none() {
+                let wd = status_state.ui_settings.lock().unwrap().pi_workdir.clone();
+                st.cwd = Some(if wd.is_empty() {
+                    dirs::home_dir()
+                        .map(|h| h.display().to_string())
+                        .unwrap_or_default()
+                } else {
+                    wd
+                });
+            }
+            warp::reply::json(&st)
+        });
+
+    let start_state = state.clone();
+    let start_config = app_config.clone();
+    let start = warp::path!("api" / "pi" / "start")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(move |body: serde_json::Value| {
+            let state = start_state.clone();
+            let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
+            let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
+            let cwd_str = body
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| state.ui_settings.lock().unwrap().pi_workdir.clone());
+            let cwd = if cwd_str.is_empty() {
+                dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
+            } else {
+                std::path::PathBuf::from(&cwd_str)
+            };
+            if !cwd.is_dir() {
+                return warp::reply::json(&serde_json::json!({
+                    "ok": false,
+                    "error": format!("{} is not a directory", cwd.display())
+                }));
+            }
+            // Remember the directory for next time.
+            {
+                let mut settings = state.ui_settings.lock().unwrap();
+                if settings.pi_workdir != cwd_str {
+                    settings.pi_workdir = cwd_str.clone();
+                    let _ = app_state::save_ui_settings(&state.ui_settings_path, &settings);
+                }
+            }
+            let Some(program) = pi::find_pi() else {
+                return warp::reply::json(&serde_json::json!({
+                    "ok": false,
+                    "error": "pi is not installed; use Install pi first"
+                }));
+            };
+            // Point pi at whatever is loaded (or a placeholder id when
+            // nothing is; llama-server ignores the id anyway).
+            let (model_id, model_name, ctx) = {
+                let cfg = state.server_config.lock().unwrap();
+                match cfg.as_ref() {
+                    Some(c) => {
+                        let file = std::path::Path::new(&c.model_path)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "llama-server".to_string());
+                        (file.clone(), file, c.context_size.max(4096))
+                    }
+                    None => (
+                        "llama-server".to_string(),
+                        "llama-server (current model)".to_string(),
+                        32768,
+                    ),
+                }
+            };
+            if let Err(e) = pi::write_models_json(start_config.port, &model_id, &model_name, ctx) {
+                return warp::reply::json(&serde_json::json!({
+                    "ok": false,
+                    "error": format!("cannot write pi models.json: {e:#}")
+                }));
+            }
+            let args = vec![
+                "--provider".to_string(),
+                pi::PROVIDER.to_string(),
+                "--model".to_string(),
+                model_id,
+            ];
+            match pi::start(
+                &state.pi,
+                &program.display().to_string(),
+                &args,
+                cwd.clone(),
+                "pi".to_string(),
+                cols,
+                rows,
+            ) {
+                Ok(()) => {
+                    crate::applog::info(format!("Started pi in {}", cwd.display()));
+                    warp::reply::json(&serde_json::json!({"ok": true}))
+                }
+                Err(e) => warp::reply::json(
+                    &serde_json::json!({"ok": false, "error": format!("{e:#}")}),
+                ),
+            }
+        });
+
+    let install_state = state.clone();
+    let install = warp::path!("api" / "pi" / "install")
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(move |body: serde_json::Value| {
+            let cols = body.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u16;
+            let rows = body.get("rows").and_then(|v| v.as_u64()).unwrap_or(32) as u16;
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            // pi's own installer, exactly as its site documents it.
+            let args = vec![
+                "-c".to_string(),
+                "curl -fsSL https://pi.dev/install.sh | sh".to_string(),
+            ];
+            match pi::start(
+                &install_state.pi,
+                "sh",
+                &args,
+                home,
+                "pi installer".to_string(),
+                cols,
+                rows,
+            ) {
+                Ok(()) => {
+                    crate::applog::info("Running the pi installer (curl -fsSL https://pi.dev/install.sh | sh)");
+                    warp::reply::json(&serde_json::json!({"ok": true}))
+                }
+                Err(e) => warp::reply::json(
+                    &serde_json::json!({"ok": false, "error": format!("{e:#}")}),
+                ),
+            }
+        });
+
+    let stop_state = state.clone();
+    let stop = warp::path!("api" / "pi" / "stop")
+        .and(warp::post())
+        .map(move || {
+            pi::stop(&stop_state.pi);
+            warp::reply::json(&serde_json::json!({"ok": true}))
+        });
+
+    status.or(start).or(install).or(stop)
 }

@@ -27,6 +27,9 @@ pub struct UiSettings {
     pub llama_server_cwd: String,
     #[serde(default)]
     pub models_dir: String,
+    /// Working directory pi starts in; empty means the home directory.
+    #[serde(default)]
+    pub pi_workdir: String,
 }
 
 fn default_port() -> u16 {
@@ -71,6 +74,8 @@ pub struct AppState {
     pub gpu_metrics: Arc<Mutex<BTreeMap<String, GpuMetrics>>>,
     /// Processes using the GPUs (nvtop-style), refreshed every few seconds.
     pub gpu_processes: Arc<Mutex<Vec<crate::gpu::procs::GpuProcess>>>,
+    /// The pi coding-agent terminal session, when one is running.
+    pub pi: crate::pi::Shared,
     pub llama_metrics: Arc<Mutex<LlamaMetrics>>,
     pub server_logs: Arc<Mutex<VecDeque<String>>>,
     pub server_child: Arc<tokio::sync::Mutex<Option<tokio::process::Child>>>,
@@ -113,6 +118,7 @@ impl AppState {
         Self {
             gpu_metrics: Arc::new(Mutex::new(BTreeMap::new())),
             gpu_processes: Arc::new(Mutex::new(Vec::new())),
+            pi: Arc::new(Mutex::new(None)),
             llama_metrics: Arc::new(Mutex::new(LlamaMetrics::default())),
             server_logs: Arc::new(Mutex::new(VecDeque::new())),
             server_child: Arc::new(tokio::sync::Mutex::new(None)),

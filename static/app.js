@@ -1,6 +1,6 @@
 // ─── App shell: navigation + responsive drawer ────────────────────────────
 
-const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'models', 'install'];
+const SECTIONS = ['monitor', 'logs', 'presets', 'bench', 'chat', 'pi', 'models', 'install'];
 let activeSection = 'monitor';
 
 function switchTab(name) {
@@ -20,6 +20,7 @@ function switchTab(name) {
     if (name === 'bench') populateBenchModels();
     if (name === 'presets') renderPresetsPage();
     if (name === 'install') loadInstallPage(false);
+    if (name === 'pi') openPiPage();
     if (name === 'chat') setTimeout(() => document.getElementById('chat-input').focus(), 50);
     if (name === 'logs') { logsUnread = 0; renderLogsNav(); const el = document.getElementById('app-log'); el.scrollTop = el.scrollHeight; }
 
@@ -3200,4 +3201,220 @@ async function useBuildInSettings(id) {
     } catch (err) {
         showToast('Could not update Settings: ' + err.message, 'error');
     }
+}
+
+// --- Pi page: xterm.js attached to a PTY on the server over /ws/pi ---
+
+let piTerm = null;
+let piFit = null;
+let piSocket = null;
+let piStatus = null;
+let piScriptsLoading = null;
+
+function loadScriptOnce(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+        const el = document.createElement('script');
+        el.src = src;
+        el.onload = resolve;
+        el.onerror = () => reject(new Error('failed to load ' + src));
+        document.head.appendChild(el);
+    });
+}
+
+// xterm.js is vendored but only fetched when the page is first opened.
+function ensureXterm() {
+    if (window.Terminal && window.FitAddon) return Promise.resolve();
+    if (!piScriptsLoading) {
+        const v = encodeURIComponent((document.querySelector('script[src^="/app.js"]') || {}).src?.split('v=')[1] || '');
+        piScriptsLoading = loadScriptOnce('/vendor/xterm.js?v=' + v)
+            .then(() => loadScriptOnce('/vendor/xterm-addon-fit.js?v=' + v));
+    }
+    return piScriptsLoading;
+}
+
+function piTheme() {
+    const css = getComputedStyle(document.documentElement);
+    const v = n => css.getPropertyValue(n).trim();
+    return {
+        background: '#0b0d14',
+        foreground: v('--fg-bright') || '#e6e6e6',
+        cursor: v('--accent') || '#8b5cf6',
+        selectionBackground: 'rgba(139, 92, 246, 0.35)',
+    };
+}
+
+async function openPiPage() {
+    await refreshPiStatus();
+    if (piStatus && piStatus.running) attachPiTerminal();
+}
+
+async function refreshPiStatus() {
+    try {
+        const res = await fetch('/api/pi/status');
+        piStatus = await res.json();
+    } catch (err) {
+        piStatus = { installed: false, running: false, error: err.message };
+    }
+    renderPiStatus();
+}
+
+function renderPiStatus() {
+    const st = piStatus || {};
+    const badge = document.getElementById('pi-status-badge');
+    const note = document.getElementById('pi-note');
+    const cwd = document.getElementById('pi-cwd');
+    if (!cwd.value && st.cwd) cwd.value = st.cwd;
+    document.getElementById('pi-btn-install').hidden = st.installed;
+    document.getElementById('pi-btn-start').hidden = !st.installed;
+    document.getElementById('pi-btn-stop').hidden = !st.running;
+    document.getElementById('pi-btn-start').textContent = st.running && st.label === 'pi' ? 'Restart pi' : 'Start pi';
+    document.getElementById('nav-count-pi').textContent = st.running ? '\u25cf' : '';
+    if (st.running) {
+        badge.textContent = (st.label || 'pi') + ' running';
+        badge.className = 'badge badge-green';
+    } else if (st.installed) {
+        badge.textContent = 'pi ' + (st.version || 'installed').replace(/^pi\s+/i, '');
+        badge.className = 'badge badge-neutral';
+    } else {
+        badge.textContent = 'pi not installed';
+        badge.className = 'badge badge-yellow';
+    }
+    if (!st.installed) {
+        note.innerHTML = 'pi is not on this server yet. <strong>Install pi</strong> runs its installer (<code>curl -fsSL https://pi.dev/install.sh | sh</code>) in the terminal below; or install it yourself with <code>npm install -g @earendil-works/pi-coding-agent</code> and press Refresh.';
+    } else if (st.exit_code != null && !st.running) {
+        note.textContent = (st.label || 'pi') + ' exited with code ' + st.exit_code + '. Start it again when ready.';
+    } else {
+        note.innerHTML = 'Provider <code>' + escapeHtml(st.provider || 'llama-admin-monitor') + '</code> in <code>' + escapeHtml(st.models_json || '~/.pi/agent/models.json') + '</code> points pi at this monitor\'s <code>/v1</code> endpoint; it is refreshed with the loaded model every time pi starts. Inside pi, <code>/model</code> lists it alongside any other providers you have configured.';
+    }
+}
+
+function browsePiCwd() {
+    // Reuse the Settings file browser in directory mode.
+    openFileBrowser('pi-cwd', 'dir');
+}
+
+function piSize() {
+    if (piFit && piTerm) {
+        try { piFit.fit(); } catch (_) {}
+        return { cols: piTerm.cols, rows: piTerm.rows };
+    }
+    return { cols: 120, rows: 32 };
+}
+
+async function startPi() {
+    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
+    createPiTerminal();
+    const size = piSize();
+    const cwd = document.getElementById('pi-cwd').value.trim();
+    try {
+        const res = await fetch('/api/pi/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cwd, cols: size.cols, rows: size.rows }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+    } catch (err) {
+        showToast('Could not start pi: ' + err.message, 'error');
+        return;
+    }
+    await refreshPiStatus();
+    attachPiTerminal();
+}
+
+async function installPi() {
+    const proceed = await showConfirm('Install pi',
+        'Run pi\'s installer on this server (curl -fsSL https://pi.dev/install.sh | sh) in the terminal below?', 'Install');
+    if (!proceed) return;
+    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
+    createPiTerminal();
+    const size = piSize();
+    try {
+        const res = await fetch('/api/pi/install', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cols: size.cols, rows: size.rows }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'unknown error');
+    } catch (err) {
+        showToast('Could not run the installer: ' + err.message, 'error');
+        return;
+    }
+    await refreshPiStatus();
+    attachPiTerminal();
+}
+
+async function stopPi() {
+    try {
+        await fetch('/api/pi/stop', { method: 'POST' });
+    } catch (_) {}
+    detachPiTerminal();
+    await refreshPiStatus();
+}
+
+function createPiTerminal() {
+    if (piTerm || !window.Terminal) return;
+    const host = document.getElementById('pi-terminal');
+    piTerm = new window.Terminal({
+        cursorBlink: true,
+        fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace',
+        fontSize: 13,
+        scrollback: 5000,
+        theme: piTheme(),
+        allowProposedApi: true,
+    });
+    piFit = new window.FitAddon.FitAddon();
+    piTerm.loadAddon(piFit);
+    piTerm.open(host);
+    piTerm.onData(data => {
+        if (piSocket && piSocket.readyState === WebSocket.OPEN) piSocket.send(JSON.stringify({ input: data }));
+    });
+    piTerm.onBinary(data => {
+        if (piSocket && piSocket.readyState === WebSocket.OPEN) {
+            const bytes = new Uint8Array(data.length);
+            for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 255;
+            piSocket.send(bytes);
+        }
+    });
+    window.addEventListener('resize', piResize);
+    document.getElementById('pi-terminal-empty').hidden = true;
+    piResize();
+}
+
+function piResize() {
+    if (!piTerm || !piFit || document.getElementById('section-pi').hidden) return;
+    try { piFit.fit(); } catch (_) { return; }
+    if (piSocket && piSocket.readyState === WebSocket.OPEN) {
+        piSocket.send(JSON.stringify({ resize: [piTerm.cols, piTerm.rows] }));
+    }
+}
+
+async function attachPiTerminal() {
+    await ensureXterm().catch(err => { showToast(err.message, 'error'); });
+    createPiTerminal();
+    if (!piTerm) return;
+    if (piSocket && (piSocket.readyState === WebSocket.OPEN || piSocket.readyState === WebSocket.CONNECTING)) return;
+    piTerm.reset();
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/pi');
+    ws.binaryType = 'arraybuffer';
+    piSocket = ws;
+    ws.onopen = () => { piResize(); piTerm.focus(); };
+    ws.onmessage = e => {
+        if (typeof e.data === 'string') {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.error) piTerm.write('\r\n\x1b[2m[' + msg.error + ']\x1b[0m\r\n');
+            } catch (_) {}
+            return;
+        }
+        piTerm.write(new Uint8Array(e.data));
+    };
+    ws.onclose = () => {
+        if (piSocket === ws) piSocket = null;
+        refreshPiStatus();
+    };
+}
+
+function detachPiTerminal() {
+    if (piSocket) { try { piSocket.close(); } catch (_) {} piSocket = null; }
 }
