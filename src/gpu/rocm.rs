@@ -160,7 +160,10 @@ fn is_generic_amd_name(name: &str) -> bool {
 
 fn parse_hex(v: Option<&serde_json::Value>) -> Option<u32> {
     let s = v?.as_str()?.trim();
-    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let s = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     u32::from_str_radix(s, 16).ok()
 }
 
@@ -225,8 +228,8 @@ fn amd_display_name(card: &serde_json::Value) -> Option<String> {
         return Some(series.to_string());
     }
     let bus = card.get("PCI Bus").and_then(|v| v.as_str()).map(str::trim);
-    let device = parse_hex(card.get("Card Model"))
-        .or_else(|| bus.and_then(|b| read_sysfs_hex(b, "device")));
+    let device =
+        parse_hex(card.get("Card Model")).or_else(|| bus.and_then(|b| read_sysfs_hex(b, "device")));
     let rev = parse_hex(card.get("Device Rev"))
         .or_else(|| bus.and_then(|b| read_sysfs_hex(b, "revision")));
     if let Some(name) = device.and_then(|d| known_amd_name(d, rev)) {
@@ -240,7 +243,10 @@ fn amd_display_name(card: &serde_json::Value) -> Option<String> {
     } else {
         series
     };
-    let gfx = card.get("GFX Version").and_then(|v| v.as_str()).unwrap_or("");
+    let gfx = card
+        .get("GFX Version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     match (gfx.is_empty(), device) {
         (false, Some(d)) => Some(format!("{base} ({gfx}, 0x{d:04x})")),
         (false, None) => Some(format!("{base} ({gfx})")),
@@ -324,7 +330,10 @@ mod tests {
             r#"{"Card Series": "AMD Radeon Graphics", "Card Model": "0x7550", "Device Rev": "0xc3"}"#,
         )
         .unwrap();
-        assert_eq!(amd_display_name(&card).as_deref(), Some("AMD Radeon RX 9070"));
+        assert_eq!(
+            amd_display_name(&card).as_deref(),
+            Some("AMD Radeon RX 9070")
+        );
 
         let card: serde_json::Value = serde_json::from_str(
             r#"{"Card Series": "AMD Radeon Graphics", "Card Model": "0x7550"}"#,
@@ -338,10 +347,14 @@ mod tests {
 
     #[test]
     fn real_card_series_is_kept() {
-        let card: serde_json::Value =
-            serde_json::from_str(r#"{"Card Series": "AMD Radeon RX 9070 XT", "Card Model": "0x7551"}"#)
-                .unwrap();
-        assert_eq!(amd_display_name(&card).as_deref(), Some("AMD Radeon RX 9070 XT"));
+        let card: serde_json::Value = serde_json::from_str(
+            r#"{"Card Series": "AMD Radeon RX 9070 XT", "Card Model": "0x7551"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            amd_display_name(&card).as_deref(),
+            Some("AMD Radeon RX 9070 XT")
+        );
     }
 
     #[test]
