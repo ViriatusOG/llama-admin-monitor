@@ -1624,6 +1624,17 @@ function renderDiskHealth(d) {
     row('sys-disk-realloc-row', 'sys-disk-realloc', d.reallocated_sectors != null ? String(d.reallocated_sectors) : null, d.reallocated_sectors > 0 ? ' is-warn' : '');
 }
 
+async function copyText(text, label) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast((label || 'Text') + ' copied', 'success');
+    } catch (_) {
+        // Clipboard needs a secure context (https or localhost); fall back
+        // to selecting the text so the user can copy it.
+        window.prompt('Copy ' + (label || 'text') + ':', text);
+    }
+}
+
 function fmtCount(n) {
     n = n || 0;
     if (n < 10000) return n.toLocaleString();
@@ -2442,7 +2453,12 @@ function renderRuntime() {
     if (serverRunning) details.push('llama-server', 'Endpoint: ' + location.hostname + ':' + port);
     else details.push('Port ' + port);
     if (activePreset) details.push('Preset: ' + activePreset.name);
-    document.getElementById('monitor-runtime-details').innerHTML = details.map(d => '<span>' + escapeHtml(d) + '</span>').join('');
+    // The OpenAI-compatible proxy is always on the monitor's own address
+    // and follows whichever model is loaded, so clients never need the
+    // llama-server port.
+    const apiUrl = location.origin + '/v1';
+    details.push('<span class="runtime-api" title="OpenAI-compatible API, proxied to the running llama-server. Point SillyTavern, Open WebUI or the OpenAI SDKs here; any API key is accepted.">OpenAI API: <span class="runtime-api-url">' + escapeHtml(apiUrl) + '</span> <button class="btn btn-xs btn-ghost" type="button" onclick="copyText(\'' + jsStr(apiUrl) + '\', \'API URL\')" aria-label="Copy API URL">Copy</button></span>');
+    document.getElementById('monitor-runtime-details').innerHTML = details.map(d => d.startsWith('<span class="runtime-api"') ? d : '<span>' + escapeHtml(d) + '</span>').join('');
 
     document.getElementById('monitor-nav-live').classList.toggle('hidden', !serverRunning);
     document.getElementById('monitor-process-tool').classList.toggle('hidden', !serverRunning);
