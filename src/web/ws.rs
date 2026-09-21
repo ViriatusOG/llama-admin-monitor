@@ -7,6 +7,12 @@ use crate::state::AppState;
 
 const WS_PUSH_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Finished download jobs are dropped from the broadcast state after this
+/// many seconds, so a page refresh cannot pick up a days-old `done` record
+/// and re-fire the "Downloaded" toast. In-flight progress is kept, so a
+/// refresh mid-download still sees the live bar.
+const FINISHED_DOWNLOAD_TTL_SECS: u64 = 60;
+
 pub fn ws_route(
     state: AppState,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -29,7 +35,20 @@ pub fn ws_route(
                             let logs: Vec<String> =
                                 state.server_logs.lock().unwrap().iter().cloned().collect();
                             let running = *state.server_running.lock().unwrap();
-                            let hf_download = state.hf_download_progress.lock().unwrap().clone();
+                            let hf_download = {
+                                let mut progress = state.hf_download_progress.lock().unwrap();
+                                let expired = progress.as_ref().is_some_and(|p| {
+                                    p.done
+                                        && p.done_at.is_some_and(|at| {
+                                            crate::models::hf::now_unix_secs().saturating_sub(at)
+                                                > FINISHED_DOWNLOAD_TTL_SECS
+                                        })
+                                });
+                                if expired {
+                                    *progress = None;
+                                }
+                                progress.clone()
+                            };
                             let model_path = state
                                 .server_config
                                 .lock()

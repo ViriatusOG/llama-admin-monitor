@@ -562,6 +562,11 @@ async function applyBenchResult(split, batch, ubatch, threads) {
 }
 
 let benchLastDone = false;
+// True once this page session has actually watched a run in flight. The
+// server keeps finished runs around (results stay visible and applyable
+// after a refresh), so without this a refresh would re-fire the
+// "Benchmark complete" toast for a run that finished days ago.
+let benchSawRunning = false;
 
 function updateBenchProgress(b) {
     if (!b) return;
@@ -599,14 +604,20 @@ function updateBenchProgress(b) {
             ' (b:' + b.current_batch + ' ub:' + b.current_ubatch + ' t:' + b.current_threads + ') ' +
             '  (' + b.completed + ' of ' + b.total + ' complete)';
         benchLastDone = false;
+        benchSawRunning = true;
     } else if (b.done) {
         statusEl.textContent = b.cancelled
             ? 'Stopped. ' + b.results.length + ' of ' + b.total + ' runs completed.'
             : (b.best_result ? 'Done. Fastest: ' + b.best_result.tensor_split + ' (b:' + b.best_result.batch_size + ' t:' + b.best_result.threads + ')' : 'Done.');
         if (!benchLastDone) {
             benchLastDone = true;
-            if (b.error) showToast('Benchmark error: ' + b.error, 'error');
-            else showToast('Benchmark complete', 'success');
+            // Only toast for a run this page session actually watched; a
+            // finished run kept in server state would otherwise re-toast on
+            // every refresh.
+            if (benchSawRunning) {
+                if (b.error) showToast('Benchmark error: ' + b.error, 'error');
+                else showToast('Benchmark complete', 'success');
+            }
         }
     }
 

@@ -37,6 +37,10 @@ pub struct DownloadProgress {
     /// Final on-disk paths of the files completed so far.
     pub completed_paths: Vec<String>,
     pub done: bool,
+    /// Unix seconds when `done` became true, so a finished job can be
+    /// dropped after a short TTL and a page refresh cannot re-surface the
+    /// completion toast.
+    pub done_at: Option<u64>,
     pub error: Option<String>,
 }
 
@@ -216,6 +220,7 @@ pub async fn download_hf_files(
 
     if let Some(p) = progress.lock().unwrap().as_mut() {
         p.done = true;
+        p.done_at = Some(now_unix_secs());
         if let Err(e) = result {
             p.error = Some(e.to_string());
         }
@@ -276,10 +281,7 @@ async fn download_one(
     let meta = ModelMetadata {
         repo: repo_id.to_string(),
         filename: out_name.clone(),
-        downloaded_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
+        downloaded_at: now_unix_secs(),
         hf_downloads: Some(repo_info.downloads),
         hf_last_modified: repo_info.last_modified.clone(),
     };
@@ -289,6 +291,13 @@ async fn download_one(
     }
 
     Ok(final_path)
+}
+
+pub(crate) fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn format_size(bytes: u64) -> String {
