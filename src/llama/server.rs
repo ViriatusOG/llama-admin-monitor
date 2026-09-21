@@ -71,7 +71,7 @@ pub struct ServerConfig {
 
 pub async fn start_server(
     state: &AppState,
-    config: ServerConfig,
+    mut config: ServerConfig,
     app_config: &AppConfig,
 ) -> Result<()> {
     // Validate model path before starting
@@ -82,7 +82,39 @@ pub async fn start_server(
         anyhow::bail!("Model file not found: {}", config.model_path);
     }
     if !config.mmproj.is_empty() && !std::path::Path::new(&config.mmproj).exists() {
-        anyhow::bail!("Multimodal projector not found: {}", config.mmproj);
+        let stale = config.mmproj.clone();
+        match crate::models::find_mmproj_for(std::path::Path::new(&config.model_path), &stale) {
+            Some(found) => {
+                crate::applog::warn(format!(
+                    "Preset projector {} not found; using {} instead",
+                    stale,
+                    found.display()
+                ));
+                // Point the preset(s) at the file that exists so the preset
+                // editor and the next start don't repeat the mismatch.
+                let mut presets = state.presets.lock().unwrap();
+                let found_str = found.to_string_lossy().to_string();
+                let mut changed = false;
+                for p in presets.iter_mut() {
+                    if p.model_path == config.model_path && p.mmproj == stale {
+                        p.mmproj = found_str.clone();
+                        changed = true;
+                    }
+                }
+                if changed {
+                    let _ = crate::presets::save_presets(&state.presets_path, &presets);
+                }
+                config.mmproj = found_str;
+            }
+            None => anyhow::bail!(
+                "Multimodal projector not found: {}. No projector matching \
+                 {} was found in the same directory; download a companion \
+                 mmproj (HF downloads page) or set/clear the mmproj field \
+                 in the preset editor.",
+                stale,
+                config.model_path
+            ),
+        }
     }
 
     // Validate the server binary: a path must exist, a bare name must be on PATH.

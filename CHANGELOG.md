@@ -12,6 +12,7 @@ Backwards compatibility is preserved unless explicitly noted.
 - **Update pi / Update dsh**: both pages check the npm registry for a newer release (cached for an hour), show it in the status badge, and install it with `npm install -g <package>@latest` in the terminal. `POST /api/pi/update`, `POST /api/dsh/update`.
 
 ### Fixed
+- Presets whose projector file is no longer on disk (renamed or re-downloaded) failed to start with `Multimodal projector not found`. The monitor now looks for the projector that pairs with the model (same Hugging Face repo, else the model name in the projector filename) in the directory the preset pointed at and in the model's directory, starts with the file it finds, and rewrites the preset to that path. When no matching projector exists, the error says so and points at the HF downloads page / preset editor.
 - The "Downloaded …" toast fired on every page refresh, days after the download actually finished: the finished download's progress state was kept in server memory forever and re-sent to each new page, whose once-per-session guard had reset. Finished download jobs now drop out of the broadcast state 60 s after completion (in-flight progress is untouched, so refreshing mid-download still keeps the live bar). The same stale-state re-toast is fixed for "Benchmark complete": the toast now only fires for a run the current page session actually watched, while finished-run results remain visible and applyable after a refresh.
 
 ## [1.1.2] - 2026-09-19

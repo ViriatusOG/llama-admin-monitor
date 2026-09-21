@@ -141,6 +141,63 @@ pub fn pair_projectors(models: &mut [DiscoveredModel]) {
     }
 }
 
+/// Fallback projector for when a preset's `--mmproj` file is no longer on
+/// disk (renamed, re-downloaded, moved). Scans the directory the preset's
+/// path points into, then the model's own directory, for a projector that
+/// pairs with the model — the same signals as [`pair_projectors`] (both
+/// files downloaded from the same HF repo, else the model's name in the
+/// projector's filename), first match in filename order winning.
+pub fn find_mmproj_for(model_path: &Path, stale_mmproj: &str) -> Option<PathBuf> {
+    let model_filename = model_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for p in [stale_mmproj, model_path.to_str().unwrap_or("")] {
+        if let Some(parent) = Path::new(p).parent().filter(|d| d.is_dir()) {
+            let parent = parent.to_path_buf();
+            if !dirs.contains(&parent) {
+                dirs.push(parent);
+            }
+        }
+    }
+
+    for dir in dirs {
+        let Ok(models) = scan_models_dir(&dir) else {
+            continue;
+        };
+        let Some(model) = models.iter().find(|m| {
+            !m.is_mmproj
+                && (m.path == model_path
+                    || (!model_filename.is_empty()
+                        && m.path.file_name().and_then(|n| n.to_str()) == Some(model_filename)))
+        }) else {
+            continue;
+        };
+
+        // Same signal order as pair_projectors: HF repo, then name.
+        if let Some(repo) = &model.hf_repo
+            && let Some(c) = models
+                .iter()
+                .find(|c| c.is_mmproj && c.hf_repo.as_deref() == Some(repo))
+        {
+            return Some(c.path.clone());
+        }
+        if let Some(name) = &model.model_name {
+            let key = name_key(name);
+            if key.len() >= 4
+                && let Some(c) = models
+                    .iter()
+                    .find(|c| c.is_mmproj && name_key(&c.filename).contains(&key))
+            {
+                return Some(c.path.clone());
+            }
+        }
+    }
+    None
+}
+
 /// Vision projectors are conventionally named `mmproj-*.gguf` or
 /// `*-mmproj-*.gguf`; they pair with a model via `--mmproj` and cannot be
 /// launched on their own.
@@ -385,6 +442,95 @@ mod tests {
         assert!(names.contains(&"Split-Q8_0-00001-of-00002.gguf"));
 
         // Cleanup
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_find_mmproj_by_name_when_preset_path_is_stale() {
+        let dir = std::env::temp_dir().join("lam-mmproj-resolve-name");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("gemma-3-12b-it-Q6_K.gguf");
+        let actual = dir.join("mmproj-gemma-3-12b-it-F16.gguf");
+        std::fs::write(&model, b"").unwrap();
+        std::fs::write(&actual, b"").unwrap();
+
+        let stale = dir.join("mmproj-F16.gguf");
+        assert_eq!(
+            find_mmproj_for(&model, &stale.to_string_lossy()),
+            Some(actual.clone())
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_find_mmproj_prefers_same_hf_repo_over_name() {
+        let dir = std::env::temp_dir().join("lam-mmproj-resolve-repo");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("gemma-3-12b-it-Q6_K.gguf");
+        let repo_proj = dir.join("mmproj-F16.gguf");
+        let name_proj = dir.join("mmproj-gemma-3-12b-it-BF16.gguf");
+        for p in [&model, &repo_proj, &name_proj] {
+            std::fs::write(p, b"").unwrap();
+        }
+        let meta = crate::models::hf::ModelMetadata {
+            repo: "unsloth/gemma-3-12b-it-GGUF".into(),
+            filename: "gemma-3-12b-it-Q6_K.gguf".into(),
+            downloaded_at: 0,
+            hf_downloads: None,
+            hf_last_modified: None,
+        };
+        std::fs::write(
+            dir.join("gemma-3-12b-it-Q6_K.gguf.meta.json"),
+            serde_json::to_string(&meta).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("mmproj-F16.gguf.meta.json"),
+            serde_json::to_string(&meta).unwrap(),
+        )
+        .unwrap();
+
+        // Only the BF16 file matches by name, but the repo sidecars say
+        // mmproj-F16.gguf is the one that belongs to the model.
+        let stale = dir.join("mmproj-renamed.gguf");
+        assert_eq!(
+            find_mmproj_for(&model, &stale.to_string_lossy()),
+            Some(repo_proj.clone())
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_find_mmproj_falls_back_to_model_directory() {
+        let base = std::env::temp_dir().join("lam-mmproj-resolve-fallback");
+        let stale_dir = base.join("old");
+        let model_dir = base.join("models");
+        std::fs::create_dir_all(&stale_dir).unwrap();
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let model = model_dir.join("Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf");
+        let proj = model_dir.join("mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf");
+        std::fs::write(&model, b"").unwrap();
+        std::fs::write(&proj, b"").unwrap();
+
+        let stale = stale_dir.join("mmproj-F16.gguf");
+        assert_eq!(
+            find_mmproj_for(&model, &stale.to_string_lossy()),
+            Some(proj.clone())
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn test_find_mmproj_no_match_yields_none() {
+        let dir = std::env::temp_dir().join("lam-mmproj-resolve-none");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("Llama-3.3-70B-Instruct-IQ3_M.gguf");
+        let proj = dir.join("mmproj-gemma-3-12b-it-F16.gguf");
+        std::fs::write(&model, b"").unwrap();
+        std::fs::write(&proj, b"").unwrap();
+
+        let stale = dir.join("mmproj-F16.gguf");
+        assert_eq!(find_mmproj_for(&model, &stale.to_string_lossy()), None);
         std::fs::remove_dir_all(&dir).ok();
     }
 
