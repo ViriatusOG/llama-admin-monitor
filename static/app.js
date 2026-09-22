@@ -1764,7 +1764,20 @@ function renderModelsTab() {
         return compareValues(a, b, modelsSortDir);
     });
 
-    listEl.innerHTML = sorted.map(m => {
+    const q = (document.getElementById('models-filter').value || '').trim().toLowerCase();
+    const rows = q ? sorted.filter(m =>
+        (m.model_name || '').toLowerCase().includes(q) ||
+        (m.filename || '').toLowerCase().includes(q) ||
+        (m.quant_type || '').toLowerCase().includes(q)
+    ) : sorted;
+    if (rows.length === 0) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + (q ? 'No models match' : 'No models found') + '</div><p>' + (q ? 'Nothing matches \u201C' + escapeHtml(q) + '\u201D.' : 'Download one from Hugging Face, or set your models directory in Settings.') + '</p></div>';
+        return;
+    }
+
+    listEl.innerHTML = (q
+        ? '<div class="models-filter-note">' + rows.length + ' of ' + sorted.length + ' models shown</div>'
+        : '') + rows.map(m => {
             const downloads = m.hf_downloads ? m.hf_downloads.toLocaleString() : '\u2014';
             const downloadedOn = m.downloaded_at
                 ? new Date(m.downloaded_at * 1000).toLocaleDateString()
@@ -2154,6 +2167,15 @@ function openPresetModal(mode, id) {
     // The Build list comes from the server; the device picker follows it.
     populateBuildSelect(pendingBuild).then(onBackendChange);
 
+    // Baseline for the "changed" dots, and a fresh preview box.
+    snapshotModalFields();
+    const prevBox = document.getElementById('args-preview-box');
+    if (prevBox) {
+        prevBox.hidden = true;
+        prevBox.querySelector('#args-preview-warn').hidden = true;
+        prevBox.querySelector('#args-preview').textContent = '';
+    }
+
     modal.classList.add('open');
     // Scroll modal body to top
     const body = modal.querySelector('.modal-body');
@@ -2168,16 +2190,87 @@ document.getElementById('preset-modal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closePresetModal();
 });
 
+// --- "Changed since opened" dots per modal section ---
+
+let modalDirtySnapshot = null;
+
+function snapshotModalFields() {
+    modalDirtySnapshot = new Map();
+    document.querySelectorAll('#preset-form input, #preset-form select, #preset-form textarea').forEach(el => {
+        if (!el.id) return;
+        modalDirtySnapshot.set(el.id, el.type === 'checkbox' ? el.checked : el.value);
+    });
+}
+
+function refreshDirtyDots() {
+    if (!modalDirtySnapshot) return;
+    document.querySelectorAll('#preset-form details.modal-section').forEach(sec => {
+        let dirty = false;
+        sec.querySelectorAll('input, select, textarea').forEach(el => {
+            if (!el.id || !modalDirtySnapshot.has(el.id)) return;
+            const cur = el.type === 'checkbox' ? el.checked : el.value;
+            if (cur !== modalDirtySnapshot.get(el.id)) dirty = true;
+        });
+        sec.classList.toggle('has-dirty', dirty);
+    });
+}
+
+document.getElementById('preset-form').addEventListener('input', e => {
+    if (modalDirtySnapshot && e.target.id) {
+        modalDirtySnapshot.set(e.target.id, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
+    }
+    refreshDirtyDots();
+});
+
+// --- Command preview: the exact llama-server command this config launches ---
+
+async function previewServerArgs() {
+    const box = document.getElementById('args-preview-box');
+    const warn = document.getElementById('args-preview-warn');
+    const out = document.getElementById('args-preview');
+    box.hidden = false;
+    warn.hidden = true;
+    out.textContent = 'Building command…';
+    const preset = presetFromForm();
+    if (!preset.model_path) {
+        out.textContent = 'Set a model path first.';
+        return;
+    }
+    try {
+        // Same conversion as server start, so the preview is exact.
+        const resp = await fetch('/api/preview-args', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(presetToConfig(preset)),
+        });
+        const data = await resp.json();
+        if (data.warning) {
+            warn.textContent = '⚠ ' + data.warning;
+            warn.hidden = false;
+        }
+        out.textContent = (data.binary || '<binary not resolved>') + ' ' + (data.args || []).join(' ');
+    } catch (err) {
+        out.textContent = 'Preview failed: ' + err.message;
+    }
+}
+
+function copyArgsPreview() {
+    const text = document.getElementById('args-preview').textContent;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(
+        () => showToast('Command copied to clipboard', 'success'),
+        () => showToast('Copy failed', 'error'),
+    );
+}
+
 function intOrNull(id) { const v = document.getElementById(id).value; return v !== '' ? parseInt(v) : null; }
 function floatOrNull(id) { const v = document.getElementById(id).value; return v !== '' ? parseFloat(v) : null; }
 function strVal(id) { return document.getElementById(id).value.trim(); }
 
-async function savePreset(event) {
-    event.preventDefault();
-    clearFieldErrors();
-
-    const id = document.getElementById('modal-preset-id').value;
-    const preset = {
+// Reads every modal field into a ServerConfig-shaped object. Shared by
+// saving and the command preview so both always send identical data.
+function presetFromForm() {
+    return {
         // Model & Memory
         name: strVal('modal-name'),
         model_path: strVal('modal-model-path'),
@@ -2250,8 +2343,25 @@ async function savePreset(event) {
         system_prompt_file: strVal('modal-system-prompt-file'),
         extra_args: strVal('modal-extra-args'),
     };
+}
 
-    // Inline validation
+// Marks `id` red when `value` is set but outside [min, max]; returns an
+// error count. Empty fields are always valid (they send no flag).
+function fieldOutOfRange(id, value, min, max) {
+    const el = document.getElementById(id);
+    const bad = value != null && (!Number.isFinite(value) || value < min || value > max);
+    el.classList.toggle('field-error', bad);
+    return bad ? 1 : 0;
+}
+
+async function savePreset(event) {
+    event.preventDefault();
+    clearFieldErrors();
+
+    const id = document.getElementById('modal-preset-id').value;
+    const preset = presetFromForm();
+
+    // Required fields
     let valid = true;
     if (!preset.name) {
         document.getElementById('modal-name').classList.add('field-error');
@@ -2261,8 +2371,26 @@ async function savePreset(event) {
         document.getElementById('modal-model-path').classList.add('field-error');
         valid = false;
     }
-    if (!valid) {
-        showToast('Please fill in all required fields', 'error');
+    // Range checks only apply to values that were actually entered.
+    let rangeErrors = 0;
+    rangeErrors += fieldOutOfRange('modal-temperature', preset.temperature, 0, 2);
+    rangeErrors += fieldOutOfRange('modal-top-p', preset.top_p, 0, 1);
+    rangeErrors += fieldOutOfRange('modal-min-p', preset.min_p, 0, 1);
+    rangeErrors += fieldOutOfRange('modal-draft-p-min', preset.draft_p_min, 0, 1);
+    rangeErrors += fieldOutOfRange('modal-top-k', preset.top_k, 0, 1000000);
+    rangeErrors += fieldOutOfRange('modal-gpu-layers', preset.gpu_layers, 0, 999);
+    rangeErrors += fieldOutOfRange('modal-repeat-penalty', preset.repeat_penalty, 0, 10);
+    rangeErrors += fieldOutOfRange('modal-presence-penalty', preset.presence_penalty, -10, 10);
+    rangeErrors += fieldOutOfRange('modal-frequency-penalty', preset.frequency_penalty, -10, 10);
+    rangeErrors += fieldOutOfRange('modal-cram', preset.cram, -1, 1000000);
+    rangeErrors += fieldOutOfRange('modal-image-min-tokens', preset.image_min_tokens, 0, 1000000);
+    rangeErrors += fieldOutOfRange('modal-image-max-tokens', preset.image_max_tokens, 0, 1000000);
+    if (preset.image_min_tokens != null && preset.image_max_tokens != null && preset.image_min_tokens > preset.image_max_tokens) {
+        document.getElementById('modal-image-max-tokens').classList.add('field-error');
+        rangeErrors += 1;
+    }
+    if (!valid || rangeErrors > 0) {
+        showToast(rangeErrors > 0 && valid ? 'Some values are out of range' : 'Please fill in all required fields', 'error');
         return;
     }
 
@@ -2399,9 +2527,9 @@ document.getElementById('modal-model-path').addEventListener('input', () => {
 
 // --- End Preset Modal ---
 
-function getConfig() {
-    const id = document.getElementById('preset-select').value;
-    const p = presets.find(pr => pr.id === id) || {};
+// Converts a preset (or preset-shaped object) into the ServerConfig sent
+// to /api/start and /api/preview-args.
+function presetToConfig(p) {
     return {
         model_path: p.model_path || '',
         mmproj: p.mmproj || '',
@@ -2463,6 +2591,12 @@ function getConfig() {
         system_prompt_file: p.system_prompt_file || '',
         extra_args: p.extra_args || '',
     };
+}
+
+function getConfig() {
+    const id = document.getElementById('preset-select').value;
+    const p = presets.find(pr => pr.id === id) || {};
+    return presetToConfig(p);
 }
 
 let runtimePhase = 'idle';
@@ -2617,10 +2751,15 @@ function fmtLogTime(ms) {
 function renderAppLog() {
     const host = document.getElementById('app-log');
     const problemsOnly = document.getElementById('logs-problems-only').checked;
-    const rows = problemsOnly ? appLog.filter(e => e.level !== 'info') : appLog;
+    const q = (document.getElementById('logs-search').value || '').trim().toLowerCase();
+    const rows = appLog.filter(e =>
+        (!problemsOnly || e.level !== 'info') &&
+        (!q || e.message.toLowerCase().includes(q))
+    );
     const wasAtBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 40;
     if (rows.length === 0) {
-        host.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + (problemsOnly ? 'No warnings or errors' : 'Nothing logged yet') + '</div><p>Launches, failures, updates and telemetry problems appear here.</p></div>';
+        const title = q ? 'No entries match' : (problemsOnly ? 'No warnings or errors' : 'Nothing logged yet');
+        host.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + title + '</div><p>' + (q ? 'Nothing logged matches \u201C' + escapeHtml(q) + '\u201D.' : 'Launches, failures, updates and telemetry problems appear here.') + '</p></div>';
     } else {
         host.innerHTML = rows.map(e =>
             '<div class="app-log-row is-' + e.level + '">' +
@@ -2669,17 +2808,46 @@ function downloadAppLog() {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function renderLogs(logs) {
-    if (logs.length === prevLogLen) return;
+let lastServerLogs = [];
+
+// llama-server lines start with a `0.03.046.031 E srv` timestamp/level prefix.
+function logLineLevel(line) {
+    const m = line.match(/^\d+(\.\d+)+\s+([IVWDE])\b/);
+    return m ? m[2] : null;
+}
+
+function renderLogs(logs) { renderLogsInner(logs, false); }
+
+// Re-renders the current output for the search box without new data.
+function forceRenderLogs() { renderLogsInner(lastServerLogs, true); }
+
+function renderLogsInner(logs, force) {
+    lastServerLogs = logs;
+    if (!force && logs.length === prevLogLen) return;
     // The backlog shrinks when the server restarts; drop the cleared offset
     // so the new run's output is visible.
     if (logs.length < logClearedAt) logClearedAt = 0;
     const el = document.getElementById('log-panel');
+    const q = (document.getElementById('output-search').value || '').trim().toLowerCase();
+    const shown = logs.slice(logClearedAt);
     const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    el.textContent = logs.slice(logClearedAt).join('\n');
+    if (!q) {
+        // Fast path: one text node, no per-line DOM.
+        el.textContent = shown.join('\n');
+        setLogCounts(shown.length);
+    } else {
+        const matches = shown.filter(l => l.toLowerCase().includes(q));
+        el.innerHTML = matches.length
+            ? matches.map(l => {
+                const lvl = logLineLevel(l);
+                const cls = lvl === 'E' ? ' is-error' : (lvl === 'W' ? ' is-warn' : '');
+                return '<div class="log-line' + cls + '">' + escapeHtml(l) + '</div>';
+              }).join('')
+            : '<div class="fb-empty">No lines match \u201C' + escapeHtml(q) + '\u201D</div>';
+        setLogCounts(matches.length);
+    }
     if (wasAtBottom) el.scrollTop = el.scrollHeight;
     prevLogLen = logs.length;
-    setLogCounts(logs.length - logClearedAt);
 }
 
 // WebSocket
@@ -2787,6 +2955,25 @@ function renderMd(src) {
 // Chat
 let chatHistory = [];
 let chatBusy = false;
+let chatAbort = null;
+
+function stopChat() {
+    if (chatAbort) chatAbort.abort();
+}
+
+// One line of per-response stats from llama.cpp's `timings` (on the final
+// SSE chunk) and `usage` (requested via stream_options.include_usage).
+function chatStatsLine(timings, usage) {
+    const parts = [];
+    if (timings) {
+        if (timings.predicted_per_second != null) parts.push(timings.predicted_per_second.toFixed(1) + ' tok/s');
+        if (timings.predicted_n != null) parts.push(timings.predicted_n + ' tokens');
+        if (timings.prompt_per_second != null) parts.push('prompt ' + timings.prompt_per_second.toFixed(0) + ' t/s');
+        if (timings.draft_n) parts.push('draft ' + (timings.draft_n_accepted || 0) + '/' + timings.draft_n);
+    }
+    if (usage && usage.total_tokens != null) parts.push(usage.total_tokens + ' total');
+    return parts.join(' · ');
+}
 
 document.getElementById('chat-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
@@ -2833,20 +3020,27 @@ async function sendChat() {
     const url = '/v1/chat/completions';
 
     chatBusy = true;
+    chatAbort = new AbortController();
     document.getElementById('btn-send').disabled = true;
+    document.getElementById('btn-chat-stop').hidden = false;
 
     let thinkEl = null;
     let thinkContent = '';
     const msgEl = appendMsg('assistant', '');
     let msgContent = '';
+    let timings = null;
+    let usage = null;
+    let aborted = false;
 
     try {
         const resp = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: chatAbort.signal,
             body: JSON.stringify({
                 messages: chatHistory,
                 stream: true,
+                stream_options: { include_usage: true },
                 temperature: 1.0,
                 top_p: 0.95,
                 top_k: 40,
@@ -2873,6 +3067,8 @@ async function sendChat() {
                 if (payload === '[DONE]') continue;
                 try {
                     const obj = JSON.parse(payload);
+                    if (obj.timings) timings = obj.timings;
+                    if (obj.usage) usage = obj.usage;
                     const delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
                     if (!delta) continue;
 
@@ -2900,15 +3096,30 @@ async function sendChat() {
             chatScroll();
         }
     } catch (err) {
-        msgEl.textContent = '[error] ' + err.message;
-        msgEl.classList.add('msg-error');
+        if (err.name === 'AbortError') {
+            aborted = true;
+            if (!msgContent) msgEl.textContent = '[stopped]';
+        } else {
+            msgEl.textContent = '[error] ' + err.message;
+            msgEl.classList.add('msg-error');
+        }
+    }
+
+    const stats = chatStatsLine(timings, usage);
+    if (stats || aborted) {
+        const div = document.createElement('div');
+        div.className = 'msg-meta';
+        div.textContent = [aborted ? 'stopped' : null, stats].filter(Boolean).join(' · ');
+        msgEl.insertAdjacentElement('afterend', div);
     }
 
     if (msgContent) {
         chatHistory.push({ role: 'assistant', content: msgContent });
     }
     chatBusy = false;
+    chatAbort = null;
     document.getElementById('btn-send').disabled = false;
+    document.getElementById('btn-chat-stop').hidden = true;
     document.getElementById('nav-count-chat').textContent = String(chatHistory.length);
 }
 if ('serviceWorker' in navigator) {

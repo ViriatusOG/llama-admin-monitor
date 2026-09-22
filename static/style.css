@@ -243,12 +243,12 @@ code { font-family: var(--mono); font-size: 0.92em; background: var(--inset-md);
 .input-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .input-row > input[type="text"] { flex: 1; min-width: 120px; }
 
-input[type="text"], input[type="number"], select, textarea {
+input[type="text"], input[type="number"], input[type="search"], select, textarea {
     background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
     color: var(--fg); padding: 6px var(--space-3); font-family: var(--font); font-size: 13px;
     outline: none; transition: border-color var(--ease-fast), box-shadow var(--ease-fast); line-height: 1.4;
 }
-input[type="text"], input[type="number"], select { min-height: var(--control-height); }
+input[type="text"], input[type="number"], input[type="search"], select { min-height: var(--control-height); }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
 input::placeholder, textarea::placeholder { color: var(--fg-muted); }
 input[type="number"] { width: 100px; }
@@ -786,3 +786,76 @@ details.monitor-output-card:not([open]) > summary .details-chevron {
 .dsh-log > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--fg-muted); user-select: none; }
 .dsh-log[open] > summary { margin-bottom: var(--space-2); }
 .dsh-terminal-wrap { height: 360px; min-height: 240px; }
+
+/* ════════════════════════════════════════════
+   QUICK-WIN UI (v2026.09.22-beta.21)
+   Page search inputs, dirty-section dots,
+   command preview box, chat stats, log coloring
+   ════════════════════════════════════════════ */
+
+.page-search { width: 170px; min-width: 0; font-size: 12px; }
+
+/* Preset modal: dot on section headers changed since the modal opened. */
+.modal-section.has-dirty > summary::after {
+    content: '\25CF';
+    color: var(--accent);
+    font-size: 9px;
+    margin-left: 8px;
+    vertical-align: 1px;
+}
+
+/* Preset modal: read-only exact-command preview. */
+.args-preview-box {
+    margin-top: var(--space-4);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--inset-md);
+    overflow: hidden;
+}
+.args-preview-warn {
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--yellow);
+    background: var(--yellow-subtle);
+    border-bottom: 1px solid var(--yellow-border);
+}
+.args-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg-muted);
+}
+.args-preview {
+    margin: 0;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Chat: per-response stats line under an assistant message. */
+.msg-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-faint);
+    margin: 2px 0 8px;
+}
+
+/* Monitor: per-line rendering while a Process Output search is active. */
+.log-line { font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+.log-line.is-error { color: var(--red); }
+.log-line.is-warn { color: var(--yellow); }
+
+/* Models: N-of-M note above the filtered grid. */
+.models-filter-note {
+    padding: var(--space-2) var(--space-4);
+    font-size: 12px;
+    color: var(--fg-faint);
+}

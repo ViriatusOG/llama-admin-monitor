@@ -110,7 +110,7 @@ pub struct ModelPreset {
     #[serde(default)]
     pub kv_offload: bool,
     #[serde(default)]
-    pub cram: Option<u32>,
+    pub cram: Option<i32>,
     #[serde(default)]
     pub context_shift: bool,
     /// Skip the startup warmup pass (historical default: true).

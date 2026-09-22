@@ -117,9 +117,11 @@ pub struct ServerConfig {
     /// Offload the KV cache to CPU (`--kv-offload`).
     #[serde(default)]
     pub kv_offload: bool,
-    /// KV cache compression bits per element (`--cram`).
+    /// Maximum cache size in MiB (`--cram` / `--cache-ram`).
+    /// `0` disables the cache, `-1` removes the limit; `None` leaves the
+    /// flag off (server default is 8192).
     #[serde(default)]
-    pub cram: Option<u32>,
+    pub cram: Option<i32>,
     /// Shift the context window as it fills (`--context-shift`).
     #[serde(default)]
     pub context_shift: bool,

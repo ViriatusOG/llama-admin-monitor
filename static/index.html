@@ -214,6 +214,7 @@
                         <span class="badge badge-green hidden" id="monitor-process-state">Running</span>
                         <span class="badge badge-dim" id="monitor-output-lines">0 lines</span>
                         <span class="monitor-sep" aria-hidden="true"></span>
+                        <input type="search" class="page-search" id="output-search" placeholder="Search output…" oninput="forceRenderLogs()" aria-label="Search process output">
                         <button class="btn btn-sm btn-ghost" id="btn-clear-output" type="button" onclick="clearOutput(event)">Clear</button>
                         <span class="icon icon-sm details-chevron"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
                     </div>
@@ -374,6 +375,7 @@
                     <div class="page-title-sub">What Llama Admin Monitor itself reported: launches and failures, update progress, telemetry and download problems. llama-server's own output is under Process Output on Monitor.</div>
                 </div>
                 <div class="page-actions">
+                    <input type="search" class="page-search" id="logs-search" placeholder="Search entries…" oninput="renderAppLog()" aria-label="Search log entries">
                     <label class="toggle" for="logs-problems-only"><input type="checkbox" id="logs-problems-only" onchange="renderAppLog()"> Problems only</label>
                     <span class="badge badge-dim" id="logs-count">0 entries</span>
                     <button class="btn btn-sm" type="button" onclick="downloadAppLog()">Download</button>
@@ -494,6 +496,7 @@
                 </div>
                 <div class="chat-input-row">
                     <textarea id="chat-input" rows="2" placeholder="Send a message… (Enter to send, Shift+Enter for newline)"></textarea>
+                    <button class="btn btn-danger btn-sm" id="btn-chat-stop" type="button" onclick="stopChat()" hidden>Stop</button>
                     <button class="btn btn-primary" id="btn-send" type="button" onclick="sendChat()">Send</button>
                 </div>
             </div>
@@ -507,6 +510,7 @@
                     <div class="page-title-sub">Every <code>.gguf</code> in your models directory, with VRAM fit and Hugging Face provenance.</div>
                 </div>
                 <div class="page-actions">
+                    <input type="search" class="page-search" id="models-filter" placeholder="Filter models…" oninput="renderModelsTab()" aria-label="Filter models">
                     <button class="btn" type="button" onclick="loadModelsTab()">Rescan</button>
                     <button class="btn btn-primary" type="button" onclick="openHfModal()">
                         <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
@@ -932,11 +936,11 @@
                             <option value="on">on</option>
                         </select>
                     </label>
-                    <label class="modal-field" title="Target memory per GPU in MiB when auto-fitting (--fitt), e.g. '8192,16384'.">Fit target MiB (--fitt)
-                        <input type="text" id="modal-fit-target" placeholder="8192,16384">
+                    <label class="modal-field" title="Per-device margin left free in MiB when auto-fitting (--fitt), e.g. '1024,2048' (server default 1024).">Fit margin MiB (--fitt)
+                        <input type="text" id="modal-fit-target" placeholder="1024,2048">
                     </label>
-                    <label class="modal-field" title="KV cache compression in bits per element (--cram). Lower = less memory at some quality cost.">KV compress (--cram)
-                        <input type="number" id="modal-cram" placeholder="off">
+                    <label class="modal-field" title="Maximum cache size in MiB (--cram / --cache-ram). 0 = disabled, -1 = no limit; leave empty for the server default (8192).">Cache MiB (--cram)
+                        <input type="number" id="modal-cram" placeholder="8192">
                     </label>
                 </div>
                 <div class="modal-checks">
@@ -1157,8 +1161,17 @@
                 </label>
             </details>
 
+            <div class="args-preview-box" id="args-preview-box" hidden>
+                <div class="args-preview-warn" id="args-preview-warn" hidden></div>
+                <div class="args-preview-head">
+                    <span>Exact command this preset launches</span>
+                    <button class="btn btn-sm btn-ghost" type="button" onclick="copyArgsPreview()">Copy</button>
+                </div>
+                <pre class="args-preview" id="args-preview"></pre>
+            </div>
             </div><!-- /modal-body -->
             <div class="modal-buttons">
+                <button type="button" class="btn" onclick="previewServerArgs()">Preview command</button>
                 <button type="button" class="btn" onclick="closePresetModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary" id="btn-modal-save">Save</button>
             </div>

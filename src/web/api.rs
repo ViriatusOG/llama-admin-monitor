@@ -19,6 +19,7 @@ pub fn api_routes(
     let app_config_bench = app_config.clone();
     let start = api_start(state.clone(), app_config.clone());
     let stop = api_stop(state.clone());
+    let preview_args = api_preview_args(state.clone(), app_config.clone());
     let get_presets = api_get_presets(state.clone());
     let create_preset = api_create_preset(state.clone());
     let update_preset = api_update_preset(state.clone());
@@ -56,6 +57,7 @@ pub fn api_routes(
 
     start
         .or(stop)
+        .or(preview_args)
         .or(create_preset)
         .or(update_preset)
         .or(delete_preset)
@@ -108,6 +110,44 @@ fn api_start(
                         ))
                     }
                 }
+            }
+        })
+}
+
+/// Read-only preview of the exact llama-server command a config would
+/// launch, for the preset editor. No process is started; the reply carries
+/// the resolved binary, the argument list, and a warning when the binary
+/// cannot be resolved (e.g. an uninstalled build).
+fn api_preview_args(
+    state: AppState,
+    app_config: Arc<AppConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("api" / "preview-args")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and_then(move |config: ServerConfig| {
+            let state = state.clone();
+            let app_config = app_config.clone();
+            async move {
+                let ui = state.ui_settings.lock().unwrap().clone();
+                let mut eff_config = (*app_config).clone();
+                if !ui.llama_server_path.is_empty() {
+                    eff_config.llama_server_path = PathBuf::from(&ui.llama_server_path);
+                }
+                if !ui.llama_server_cwd.is_empty() {
+                    eff_config.llama_server_cwd = PathBuf::from(&ui.llama_server_cwd);
+                }
+                let use_cuda = config.backend == "cuda";
+                let args = server::build_server_args(&config, use_cuda);
+                let (binary, warning) = match server::launch_target(&eff_config, &config.backend) {
+                    Ok(t) => (Some(t.binary.to_string_lossy().to_string()), None),
+                    Err(e) => (None, Some(format!("{e:#}"))),
+                };
+                Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
+                    "binary": binary,
+                    "args": args,
+                    "warning": warning,
+                })))
             }
         })
 }
