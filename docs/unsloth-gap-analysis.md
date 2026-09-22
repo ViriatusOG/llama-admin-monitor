@@ -144,7 +144,7 @@ Missing knobs:
 | Flag | Note |
 |---|---|
 | `--fit` / `--fitc` / `--fitt` | **auto-fit context to available RAM/VRAM** — pairs naturally with your existing auto-YaRN; replaces manual context guessing |
-| `--cram` | KV-cache compression (bits) |
+| `--cram` (`--cache-ram`) | max cache size in MiB (0 = disabled, −1 = no limit, default 8192) |
 | `--kv-offload` / `--no-kv-offload` | KV to CPU when VRAM is tight |
 | `--kv-unified`, `--kv-unified-per-slot` | |
 | `--context-shift` | auto-shift long conversations |

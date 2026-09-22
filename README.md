@@ -254,7 +254,7 @@ Every colour in the UI comes from a token in `static/tokens.css`, and each theme
 The preset editor groups llama.cpp parameters into collapsible sections:
 
 - **Model & memory** — model path (with file browser and HF download), multimodal projector (`--mmproj`) for vision models (plus projector device `--mmdev`, `--mmproj-offload`, per-image token limits), GPU layers, no-mmap, mlock
-- **Context & KV cache** — context size, K/V quantisation (`f16`/`q8_0`), flash attention, auto-fit context (`--fit`/`--fitt`), KV cache compression (`--cram`), KV offload (`--kv-offload`), context shift (`--context-shift`), warmup toggle
+- **Context & KV cache** — context size, K/V quantisation (`f16`/`q8_0`), flash attention, auto-fit context (`--fit`/`--fitt`), cache size cap in MiB (`--cram`), KV offload (`--kv-offload`), context shift (`--context-shift`), warmup toggle
 - **Batching & slots** — batch size, micro-batch, parallel slots
 - **GPU distribution** — devices to offload to (from `llama-server --list-devices`; tick one card to keep a model off the others), tensor split, backend (Vulkan/CUDA), split mode, main GPU
 - **Threading** — generation and batch thread counts
