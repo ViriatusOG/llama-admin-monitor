@@ -253,13 +253,15 @@ Every colour in the UI comes from a token in `static/tokens.css`, and each theme
 
 The preset editor groups llama.cpp parameters into collapsible sections:
 
-- **Model & memory** — model path (with file browser and HF download), multimodal projector (`--mmproj`) for vision models, GPU layers, no-mmap, mlock
-- **Context & KV cache** — context size, K/V quantisation (`f16`/`q8_0`), flash attention
+- **Model & memory** — model path (with file browser and HF download), multimodal projector (`--mmproj`) for vision models (plus projector device `--mmdev`, `--mmproj-offload`, per-image token limits), GPU layers, no-mmap, mlock
+- **Context & KV cache** — context size, K/V quantisation (`f16`/`q8_0`), flash attention, auto-fit context (`--fit`/`--fitt`), KV cache compression (`--cram`), KV offload (`--kv-offload`), context shift (`--context-shift`), warmup toggle
 - **Batching & slots** — batch size, micro-batch, parallel slots
 - **GPU distribution** — devices to offload to (from `llama-server --list-devices`; tick one card to keep a model off the others), tensor split, backend (Vulkan/CUDA), split mode, main GPU
 - **Threading** — generation and batch thread counts
 - **Rope scaling** — YaRN/linear scaling, frequency base/scale
-- **Speculative decoding** — ngram-mod, draft model, draft min/max
+- **Sampling (server defaults)** — temperature, top-p, top-k, min-p, repeat/presence/frequency penalties, ignore-eos; API clients can still override per request
+- **Reasoning / thinking** — reasoning mode (`--rea` on/off/auto), thinking effort (`--reasoning-effort`), preserve thinking (`--reasoning-preserve`), chat-template kwargs
+- **Speculative decoding** — spec type (`--spec-type`: ngram variants, `draft-eagle3`, `draft-mtp`, …), ngram size, draft model, draft min/max, draft model offloading (`--spec-draft-ngl/-device/-threads/-threads-batch`, `--draft-p-min`)
 - **Advanced** — seed, system prompt file, extra CLI args
 
 ## API reference

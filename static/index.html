@@ -880,6 +880,20 @@
                     </div>
                 </label>
                 <div class="modal-row">
+                    <label class="modal-field" title="Device to run the multimodal projector on (--mmdev), e.g. 'Vulkan1'. Empty = llama.cpp default.">Projector device (--mmdev)
+                        <input type="text" id="modal-mmproj-device" placeholder="default">
+                    </label>
+                    <label class="modal-field" title="Per-image token budget for vision inputs (--image-min-tokens / --image-max-tokens).">Image tokens min / max
+                        <div class="input-row">
+                            <input type="number" id="modal-image-min-tokens" placeholder="min">
+                            <input type="number" id="modal-image-max-tokens" placeholder="max">
+                        </div>
+                    </label>
+                </div>
+                <div class="modal-checks">
+                    <label class="chk" title="Run the multimodal projector on CPU instead of the GPU (--mmproj-offload)."><input type="checkbox" id="modal-mmproj-offload"> mmproj-offload</label>
+                </div>
+                <div class="modal-row">
                     <label class="modal-field" title="Number of layers to offload to GPU. 99 = all layers. Lower values keep some layers on CPU to save VRAM.">GPU layers (-ngl)
                         <input type="number" id="modal-gpu-layers" placeholder="99">
                     </label>
@@ -910,6 +924,25 @@
                             <option value="off">off</option>
                         </select>
                     </label>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-field" title="Automatically fit the context size to available memory (--fit).">Auto-fit context (--fit)
+                        <select id="modal-fit">
+                            <option value="">off</option>
+                            <option value="on">on</option>
+                        </select>
+                    </label>
+                    <label class="modal-field" title="Target memory per GPU in MiB when auto-fitting (--fitt), e.g. '8192,16384'.">Fit target MiB (--fitt)
+                        <input type="text" id="modal-fit-target" placeholder="8192,16384">
+                    </label>
+                    <label class="modal-field" title="KV cache compression in bits per element (--cram). Lower = less memory at some quality cost.">KV compress (--cram)
+                        <input type="number" id="modal-cram" placeholder="off">
+                    </label>
+                </div>
+                <div class="modal-checks">
+                    <label class="chk" title="Offload the KV cache to CPU when VRAM runs short (--kv-offload)."><input type="checkbox" id="modal-kv-offload"> kv-offload</label>
+                    <label class="chk" title="Shift the context window automatically as it fills, instead of failing (--context-shift)."><input type="checkbox" id="modal-context-shift"> context-shift</label>
+                    <label class="chk" title="Skip the startup warmup pass. Uncheck to let llama-server warm the model at launch."><input type="checkbox" id="modal-no-warmup" checked> no-warmup</label>
                 </div>
             </details>
 
@@ -991,9 +1024,88 @@
             </details>
 
             <details class="modal-section">
-                <summary>Speculative decoding</summary>
+                <summary>Sampling (server defaults)</summary>
+                <p class="help-text">Defaults applied by llama-server; API clients can still override per request. Qwen-style hybrid models: thinking &asymp; temp 1.0 / top-p 0.95 / top-k 20 / min-p 0.0; non-thinking &asymp; temp 0.7 / top-p 0.80 / presence 1.5.</p>
+                <div class="modal-row">
+                    <label class="modal-field" title="Sampling temperature (--temp).">Temperature
+                        <input type="number" id="modal-temperature" step="any" placeholder="llama.cpp default">
+                    </label>
+                    <label class="modal-field" title="Nucleus sampling probability threshold (--top-p).">Top-p
+                        <input type="number" id="modal-top-p" step="any" placeholder="0.9">
+                    </label>
+                    <label class="modal-field" title="Keep only the top K most probable tokens (--top-k).">Top-k
+                        <input type="number" id="modal-top-k" placeholder="40">
+                    </label>
+                    <label class="modal-field" title="Minimum token probability as a fraction of the top token (--min-p).">Min-p
+                        <input type="number" id="modal-min-p" step="any" placeholder="0.05">
+                    </label>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-field" title="Multiplier penalty for tokens already in the context (--repeat-penalty).">Repeat penalty
+                        <input type="number" id="modal-repeat-penalty" step="any" placeholder="1.1">
+                    </label>
+                    <label class="modal-field" title="Flat penalty for tokens already present in the context (--presence-penalty).">Presence penalty
+                        <input type="number" id="modal-presence-penalty" step="any" placeholder="0.0">
+                    </label>
+                    <label class="modal-field" title="Penalty scaled by how often a token already appears (--frequency-penalty).">Frequency penalty
+                        <input type="number" id="modal-frequency-penalty" step="any" placeholder="0.0">
+                    </label>
+                </div>
                 <div class="modal-checks">
-                    <label class="chk" title="Enable ngram-mod speculative decoding. Boosts generation speed ~47% on compatible models (pure transformers)."><input type="checkbox" id="modal-ngram-spec"> ngram-spec</label>
+                    <label class="chk" title="Do not stop generation at end-of-sequence tokens (--ignore-eos)."><input type="checkbox" id="modal-ignore-eos"> ignore-eos</label>
+                </div>
+            </details>
+
+            <details class="modal-section">
+                <summary>Reasoning / thinking</summary>
+                <div class="modal-row">
+                    <label class="modal-field" title="Reasoning mode for hybrid thinking models (--rea).">Reasoning (--rea)
+                        <select id="modal-reasoning">
+                            <option value="">(model default)</option>
+                            <option value="on">on</option>
+                            <option value="off">off</option>
+                            <option value="auto">auto</option>
+                        </select>
+                    </label>
+                    <label class="modal-field" title="Thinking effort level (--reasoning-effort).">Thinking effort
+                        <select id="modal-reasoning-effort">
+                            <option value="">(default: xhigh)</option>
+                            <option value="xhigh">xhigh</option>
+                            <option value="high">high</option>
+                            <option value="medium">medium</option>
+                            <option value="low">low</option>
+                            <option value="none">none</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="modal-field" title='Extra JSON arguments passed to the chat template (--chat-template-kwargs), e.g. {"reasoning_effort":"medium"}.'>Chat template kwargs
+                    <input type="text" id="modal-chat-template-kwargs" placeholder='{"reasoning_effort":"medium"}'>
+                </label>
+                <div class="modal-checks">
+                    <label class="chk" title="Keep earlier thinking traces in the conversation (--reasoning-preserve)."><input type="checkbox" id="modal-reasoning-preserve"> preserve thinking</label>
+                </div>
+            </details>
+
+            <details class="modal-section">
+                <summary>Speculative decoding</summary>
+                <label class="modal-field" title="Speculative decoding type (--spec-type). When set, overrides the ngram-spec checkbox below. draft-mtp is recommended for MTP-capable models such as Qwen3.8.">Spec type (--spec-type)
+                    <select id="modal-spec-type">
+                        <option value="">(ngram-spec checkbox)</option>
+                        <option value="ngram-mod">ngram-mod</option>
+                        <option value="ngram-simple">ngram-simple</option>
+                        <option value="ngram-map-k">ngram-map-k</option>
+                        <option value="ngram-map-k4v">ngram-map-k4v</option>
+                        <option value="ngram-cache">ngram-cache</option>
+                        <option value="draft-simple">draft-simple</option>
+                        <option value="draft-eagle3">draft-eagle3</option>
+                        <option value="draft-mtp">draft-mtp</option>
+                        <option value="draft-dflash">draft-dflash</option>
+                        <option value="draft-dspark">draft-dspark</option>
+                        <option value="none">none (disabled)</option>
+                    </select>
+                </label>
+                <div class="modal-checks">
+                    <label class="chk" title="Enable ngram-mod speculative decoding. Boosts generation speed ~47% on compatible models (pure transformers). Used when Spec type is left empty."><input type="checkbox" id="modal-ngram-spec"> ngram-spec</label>
                 </div>
                 <div class="modal-row">
                     <label class="modal-field" title="N-gram size for speculative lookup table. Larger = better predictions but more memory.">N-gram size
@@ -1009,6 +1121,25 @@
                 <label class="modal-field" title="Path to a smaller draft model for model-based speculative decoding (alternative to ngram).">Draft model (-md)
                     <input type="text" id="modal-draft-model" placeholder="/path/to/draft-model.gguf">
                 </label>
+                <div class="modal-row">
+                    <label class="modal-field" title="GPU layers for the draft model (--spec-draft-ngl).">Draft GPU layers
+                        <input type="number" id="modal-draft-ngl" placeholder="auto">
+                    </label>
+                    <label class="modal-field" title="Device for the draft model (--spec-draft-device), e.g. 'CPU' or 'Vulkan0'.">Draft device
+                        <input type="text" id="modal-draft-device" placeholder="auto">
+                    </label>
+                    <label class="modal-field" title="CPU threads for the draft model (--spec-draft-threads).">Draft threads
+                        <input type="number" id="modal-draft-threads" placeholder="auto">
+                    </label>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-field" title="CPU threads for draft batch processing (--spec-draft-threads-batch).">Draft threads batch
+                        <input type="number" id="modal-draft-threads-batch" placeholder="auto">
+                    </label>
+                    <label class="modal-field" title="Minimum probability for a draft token to be kept (--draft-p-min).">Draft min prob
+                        <input type="number" id="modal-draft-p-min" step="any" placeholder="auto">
+                    </label>
+                </div>
             </details>
 
             <details class="modal-section">

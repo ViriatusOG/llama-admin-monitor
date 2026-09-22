@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ModelPreset {
     #[serde(default = "next_id")]
     pub id: String,
@@ -62,6 +62,69 @@ pub struct ModelPreset {
     pub draft_max: Option<u32>,
     #[serde(default)]
     pub spec_ngram_size: Option<u32>,
+    /// Speculative decoding type override (`--spec-type`); empty uses the
+    /// ngram-spec checkbox (ngram-mod).
+    #[serde(default)]
+    pub spec_type: String,
+    #[serde(default)]
+    pub draft_ngl: Option<u32>,
+    #[serde(default)]
+    pub draft_device: String,
+    #[serde(default)]
+    pub draft_threads: Option<u32>,
+    #[serde(default)]
+    pub draft_threads_batch: Option<u32>,
+    #[serde(default)]
+    pub draft_p_min: Option<f64>,
+    // Sampling (server-level defaults; requests may override per call)
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub top_p: Option<f64>,
+    #[serde(default)]
+    pub top_k: Option<u32>,
+    #[serde(default)]
+    pub min_p: Option<f64>,
+    #[serde(default)]
+    pub repeat_penalty: Option<f64>,
+    #[serde(default)]
+    pub presence_penalty: Option<f64>,
+    #[serde(default)]
+    pub frequency_penalty: Option<f64>,
+    #[serde(default)]
+    pub ignore_eos: bool,
+    // Reasoning / thinking control
+    #[serde(default)]
+    pub reasoning: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
+    #[serde(default)]
+    pub reasoning_preserve: bool,
+    #[serde(default)]
+    pub chat_template_kwargs: String,
+    // Memory & KV cache
+    #[serde(default)]
+    pub fit: String,
+    #[serde(default)]
+    pub fit_target: String,
+    #[serde(default)]
+    pub kv_offload: bool,
+    #[serde(default)]
+    pub cram: Option<u32>,
+    #[serde(default)]
+    pub context_shift: bool,
+    /// Skip the startup warmup pass (historical default: true).
+    #[serde(default = "default_no_warmup")]
+    pub no_warmup: bool,
+    // Multimodal projector placement
+    #[serde(default)]
+    pub mmproj_device: String,
+    #[serde(default)]
+    pub mmproj_offload: bool,
+    #[serde(default)]
+    pub image_min_tokens: Option<u32>,
+    #[serde(default)]
+    pub image_max_tokens: Option<u32>,
     // Advanced
     #[serde(default)]
     pub seed: Option<i64>,
@@ -69,6 +132,10 @@ pub struct ModelPreset {
     pub system_prompt_file: String,
     #[serde(default)]
     pub extra_args: String,
+}
+
+fn default_no_warmup() -> bool {
+    true
 }
 
 fn next_id() -> String {
@@ -149,6 +216,8 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
+            no_warmup: true, // historical default; serde default on deserialization
+            ..Default::default()
         },
         ModelPreset {
             id: "default-2".into(),
@@ -183,6 +252,8 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
+            no_warmup: true, // historical default; serde default on deserialization
+            ..Default::default()
         },
         ModelPreset {
             id: "default-3".into(),
@@ -217,6 +288,8 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
+            no_warmup: true, // historical default; serde default on deserialization
+            ..Default::default()
         },
         ModelPreset {
             id: "default-4".into(),
@@ -251,6 +324,8 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
+            no_warmup: true, // historical default; serde default on deserialization
+            ..Default::default()
         },
     ]
 }

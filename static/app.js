@@ -2099,10 +2099,42 @@ function openPresetModal(mode, id) {
         numOrEmpty('modal-rope-freq-scale', p.rope_freq_scale);
         // Spec decoding
         setChk('modal-ngram-spec', p.ngram_spec);
+        setOpt('modal-spec-type', p.spec_type);
         numOrEmpty('modal-spec-ngram-size', p.spec_ngram_size);
         numOrEmpty('modal-draft-min', p.draft_min);
         numOrEmpty('modal-draft-max', p.draft_max);
         setVal('modal-draft-model', p.draft_model);
+        numOrEmpty('modal-draft-ngl', p.draft_ngl);
+        setVal('modal-draft-device', p.draft_device);
+        numOrEmpty('modal-draft-threads', p.draft_threads);
+        numOrEmpty('modal-draft-threads-batch', p.draft_threads_batch);
+        numOrEmpty('modal-draft-p-min', p.draft_p_min);
+        // Sampling
+        numOrEmpty('modal-temperature', p.temperature);
+        numOrEmpty('modal-top-p', p.top_p);
+        numOrEmpty('modal-top-k', p.top_k);
+        numOrEmpty('modal-min-p', p.min_p);
+        numOrEmpty('modal-repeat-penalty', p.repeat_penalty);
+        numOrEmpty('modal-presence-penalty', p.presence_penalty);
+        numOrEmpty('modal-frequency-penalty', p.frequency_penalty);
+        setChk('modal-ignore-eos', p.ignore_eos);
+        // Reasoning
+        setOpt('modal-reasoning', p.reasoning);
+        setOpt('modal-reasoning-effort', p.reasoning_effort);
+        setChk('modal-reasoning-preserve', p.reasoning_preserve);
+        setVal('modal-chat-template-kwargs', p.chat_template_kwargs);
+        // KV / memory
+        setOpt('modal-fit', p.fit);
+        setVal('modal-fit-target', p.fit_target);
+        numOrEmpty('modal-cram', p.cram);
+        setChk('modal-kv-offload', p.kv_offload);
+        setChk('modal-context-shift', p.context_shift);
+        setChk('modal-no-warmup', p.no_warmup ?? true);
+        // Projector
+        setVal('modal-mmproj-device', p.mmproj_device);
+        setChk('modal-mmproj-offload', p.mmproj_offload);
+        numOrEmpty('modal-image-min-tokens', p.image_min_tokens);
+        numOrEmpty('modal-image-max-tokens', p.image_max_tokens);
         // Advanced
         numOrEmpty('modal-seed', p.seed);
         setVal('modal-system-prompt-file', p.system_prompt_file);
@@ -2177,10 +2209,42 @@ async function savePreset(event) {
         rope_freq_scale: floatOrNull('modal-rope-freq-scale'),
         // Spec decoding
         ngram_spec: document.getElementById('modal-ngram-spec').checked,
+        spec_type: strVal('modal-spec-type'),
         spec_ngram_size: intOrNull('modal-spec-ngram-size'),
         draft_min: intOrNull('modal-draft-min'),
         draft_max: intOrNull('modal-draft-max'),
         draft_model: strVal('modal-draft-model'),
+        draft_ngl: intOrNull('modal-draft-ngl'),
+        draft_device: strVal('modal-draft-device'),
+        draft_threads: intOrNull('modal-draft-threads'),
+        draft_threads_batch: intOrNull('modal-draft-threads-batch'),
+        draft_p_min: floatOrNull('modal-draft-p-min'),
+        // Sampling
+        temperature: floatOrNull('modal-temperature'),
+        top_p: floatOrNull('modal-top-p'),
+        top_k: intOrNull('modal-top-k'),
+        min_p: floatOrNull('modal-min-p'),
+        repeat_penalty: floatOrNull('modal-repeat-penalty'),
+        presence_penalty: floatOrNull('modal-presence-penalty'),
+        frequency_penalty: floatOrNull('modal-frequency-penalty'),
+        ignore_eos: document.getElementById('modal-ignore-eos').checked,
+        // Reasoning
+        reasoning: strVal('modal-reasoning'),
+        reasoning_effort: strVal('modal-reasoning-effort'),
+        reasoning_preserve: document.getElementById('modal-reasoning-preserve').checked,
+        chat_template_kwargs: strVal('modal-chat-template-kwargs'),
+        // KV / memory
+        fit: strVal('modal-fit'),
+        fit_target: strVal('modal-fit-target'),
+        cram: intOrNull('modal-cram'),
+        kv_offload: document.getElementById('modal-kv-offload').checked,
+        context_shift: document.getElementById('modal-context-shift').checked,
+        no_warmup: document.getElementById('modal-no-warmup').checked,
+        // Projector
+        mmproj_device: strVal('modal-mmproj-device'),
+        mmproj_offload: document.getElementById('modal-mmproj-offload').checked,
+        image_min_tokens: intOrNull('modal-image-min-tokens'),
+        image_max_tokens: intOrNull('modal-image-max-tokens'),
         // Advanced
         seed: intOrNull('modal-seed'),
         system_prompt_file: strVal('modal-system-prompt-file'),
@@ -2367,6 +2431,34 @@ function getConfig() {
         draft_min: p.draft_min ?? null,
         draft_max: p.draft_max ?? null,
         spec_ngram_size: p.spec_ngram_size ?? null,
+        spec_type: p.spec_type || '',
+        draft_ngl: p.draft_ngl ?? null,
+        draft_device: p.draft_device || '',
+        draft_threads: p.draft_threads ?? null,
+        draft_threads_batch: p.draft_threads_batch ?? null,
+        draft_p_min: p.draft_p_min ?? null,
+        temperature: p.temperature ?? null,
+        top_p: p.top_p ?? null,
+        top_k: p.top_k ?? null,
+        min_p: p.min_p ?? null,
+        repeat_penalty: p.repeat_penalty ?? null,
+        presence_penalty: p.presence_penalty ?? null,
+        frequency_penalty: p.frequency_penalty ?? null,
+        ignore_eos: !!p.ignore_eos,
+        reasoning: p.reasoning || '',
+        reasoning_effort: p.reasoning_effort || '',
+        reasoning_preserve: !!p.reasoning_preserve,
+        chat_template_kwargs: p.chat_template_kwargs || '',
+        fit: p.fit || '',
+        fit_target: p.fit_target || '',
+        cram: p.cram ?? null,
+        kv_offload: !!p.kv_offload,
+        context_shift: !!p.context_shift,
+        no_warmup: p.no_warmup ?? true,
+        mmproj_device: p.mmproj_device || '',
+        mmproj_offload: !!p.mmproj_offload,
+        image_min_tokens: p.image_min_tokens ?? null,
+        image_max_tokens: p.image_max_tokens ?? null,
         seed: p.seed ?? null,
         system_prompt_file: p.system_prompt_file || '',
         extra_args: p.extra_args || '',
