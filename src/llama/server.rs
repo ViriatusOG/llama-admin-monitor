@@ -114,9 +114,9 @@ pub struct ServerConfig {
     /// Target memory per GPU in MiB when auto-fitting (`--fitt`), e.g. `8192,16384`.
     #[serde(default)]
     pub fit_target: String,
-    /// Offload the KV cache to CPU (`--kv-offload`).
+    /// KV offload mode: empty = llama.cpp default (enabled), "off" = `--no-kv-offload`.
     #[serde(default)]
-    pub kv_offload: bool,
+    pub kv_offload: String,
     /// Maximum cache size in MiB (`--cram` / `--cache-ram`).
     /// `0` disables the cache, `-1` removes the limit; `None` leaves the
     /// flag off (server default is 8192).
@@ -125,8 +125,8 @@ pub struct ServerConfig {
     /// Shift the context window as it fills (`--context-shift`).
     #[serde(default)]
     pub context_shift: bool,
-    /// Skip the startup warmup pass (historical default: true).
-    #[serde(default = "default_no_warmup")]
+    /// Skip the startup warmup pass (llama.cpp default: false, i.e. warmup on).
+    #[serde(default)]
     pub no_warmup: bool,
     // Multimodal projector placement
     /// Device to run the projector on (`--mmdev`).
@@ -146,10 +146,6 @@ pub struct ServerConfig {
     pub system_prompt_file: String,
     #[serde(default)]
     pub extra_args: String,
-}
-
-fn default_no_warmup() -> bool {
-    true
 }
 
 /// Build the llama-server argument list for a config.
@@ -231,8 +227,8 @@ pub fn build_server_args(config: &ServerConfig, use_cuda: bool) -> Vec<String> {
         a.push("--fitt".into());
         a.push(config.fit_target.clone());
     }
-    if config.kv_offload {
-        a.push("--kv-offload".into());
+    if config.kv_offload == "off" {
+        a.push("--no-kv-offload".into());
     }
     if let Some(v) = config.cram {
         a.push("--cram".into());
@@ -1029,7 +1025,6 @@ mod tests {
         c.model_path = "/models/test.gguf".into();
         c.port = 8080;
         c.parallel_slots = 1;
-        c.no_warmup = true; // historical default; serde default on deserialization
         c
     }
 
@@ -1048,7 +1043,7 @@ mod tests {
         let a = build_server_args(&cfg(), false);
         for flag in [
             "-m",
-            "--no-warmup",
+            "--warmup",
             "--jinja",
             "--metrics",
             "--webui-mcp-proxy",
@@ -1082,7 +1077,7 @@ mod tests {
             "--spec-draft-ngl",
             "--fit",
             "--fitt",
-            "--kv-offload",
+            "--no-kv-offload",
             "--cram",
             "--context-shift",
             "--mmdev",
@@ -1188,17 +1183,26 @@ mod tests {
         let mut c = cfg();
         c.fit = "on".into();
         c.fit_target = "8192,16384".into();
-        c.kv_offload = true;
+        c.kv_offload = "off".into();
         c.cram = Some(2);
         c.context_shift = true;
         c.no_warmup = false;
         let a = build_server_args(&c, false);
         assert_eq!(pair(&a, "--fit"), Some("on".into()));
         assert_eq!(pair(&a, "--fitt"), Some("8192,16384".into()));
-        assert!(has(&a, "--kv-offload"));
+        assert!(has(&a, "--no-kv-offload"));
+        assert!(!has(&a, "--kv-offload"));
         assert_eq!(pair(&a, "--cram"), Some("2".into()));
         assert!(has(&a, "--context-shift"));
         assert!(has(&a, "--warmup") && !has(&a, "--no-warmup"));
+
+        // kv_offload default (empty) sends no flag: llama.cpp's built-in default applies
+        let mut c2 = cfg();
+        let a2 = build_server_args(&c2, false);
+        assert!(!has(&a2, "--no-kv-offload"));
+        assert!(!has(&a2, "--kv-offload"));
+        // no_warmup default (false) sends --warmup
+        assert!(has(&a2, "--warmup") && !has(&a2, "--no-warmup"));
     }
 
     #[test]

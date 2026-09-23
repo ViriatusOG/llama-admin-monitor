@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on (earlier stable releases were CalVer `YYYY.M.D`). Beta releases keep zero-padded CalVer tags, `vYYYY.MM.DD-beta.NN`.
 Backwards compatibility is preserved unless explicitly noted.
 
+## [2026.09.22-beta.23]
+### Fixed
+- Example presets used `turbo3` for KV cache key/value type, which is **not a valid llama.cpp value** (allowed: `f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1`). Launching any of the three example presets crashed llama-server at startup. Replaced with `q8_0` and renamed the presets accordingly.
+- KV cache key/value type (`-ctk`/`-ctv`) were free-text inputs that accepted any string and only failed at launch. They are now dropdowns with the valid llama.cpp values, each labelled with its quality/VRAM tradeoff.
+- `--kv-offload` default was inverted relative to upstream llama.cpp (which enables KV offload by default). The preset editor presented it as an opt-in checkbox, so leaving it unchecked actually *disabled* a feature llama.cpp enables by default. It is now a tri-state select: "on (default)" sends no flag (llama.cpp's built-in behaviour applies); "off" sends `--no-kv-offload`.
+- `--no-warmup` default was inverted relative to upstream llama.cpp (which warms the model by default). The monitor hard-defaulted to `no_warmup = true` (skip warmup), making every first prompt slower for no reason. The default is now `no_warmup = false` (warmup on), matching upstream; the checkbox is relabelled "Skip warmup".
+- Tensor split (`-ts`) tooltip and placeholder used slash-separated values (`7/8/8/8`); llama.cpp expects **comma-separated** (`7,8,8,8`). Tooltip, placeholder, and example all corrected.
+
 ## [Unreleased]
 ### Added
 - **Harness reasoning support (DeepSeek/dsh and pi pages).** The `llama-admin-monitor` provider the monitor writes into `~/.dsh/settings.yaml` (DeepSeek page) and `~/.pi/agent/models.json` (pi page) now detects hybrid thinking per preset model by reading the gguf's `tokenizer.chat_template` (header only) and checking for the `enable_thinking` variable. Thinking models get a reasoning capability in both files — `reasoningEfforts: {off, medium}` for dsh, `reasoning: true` plus a `thinkingLevelMap` for pi — and the provider gains the compat switches `thinkingFormat: qwen-chat-template` and `supportsReasoningEffort: false`, so the harness model picker and pi's `/model` offer a **Reasoning effort** control (Off / Medium) that is sent to llama-server as `chat_template_kwargs: {enable_thinking, preserve_thinking}`. Models whose chat template has no `enable_thinking` (or that cannot be read) are written exactly as before, so non-thinking setups are unaffected.

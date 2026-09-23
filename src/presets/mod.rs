@@ -107,14 +107,15 @@ pub struct ModelPreset {
     pub fit: String,
     #[serde(default)]
     pub fit_target: String,
+    /// KV offload mode: empty = llama.cpp default (enabled), "off" = `--no-kv-offload`.
     #[serde(default)]
-    pub kv_offload: bool,
+    pub kv_offload: String,
     #[serde(default)]
     pub cram: Option<i32>,
     #[serde(default)]
     pub context_shift: bool,
-    /// Skip the startup warmup pass (historical default: true).
-    #[serde(default = "default_no_warmup")]
+    /// Skip the startup warmup pass (llama.cpp default: false, i.e. warmup on).
+    #[serde(default)]
     pub no_warmup: bool,
     // Multimodal projector placement
     #[serde(default)]
@@ -132,10 +133,6 @@ pub struct ModelPreset {
     pub system_prompt_file: String,
     #[serde(default)]
     pub extra_args: String,
-}
-
-fn default_no_warmup() -> bool {
-    true
 }
 
 fn next_id() -> String {
@@ -216,19 +213,18 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
-            no_warmup: true, // historical default; serde default on deserialization
             ..Default::default()
         },
         ModelPreset {
             id: "default-2".into(),
-            name: "Example: Medium Model 256K turbo3 + ngram".into(),
+            name: "Example: Medium Model 256K q8_0 + ngram".into(),
             model_path: String::new(),
             mmproj: String::new(),
             backend: String::new(),
             devices: String::new(),
             context_size: 256000,
-            ctk: "turbo3".into(),
-            ctv: "turbo3".into(),
+            ctk: "q8_0".into(),
+            ctv: "q8_0".into(),
             tensor_split: String::new(),
             batch_size: 2048,
             ubatch_size: 2048,
@@ -252,7 +248,6 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
-            no_warmup: true, // historical default; serde default on deserialization
             ..Default::default()
         },
         ModelPreset {
@@ -263,8 +258,8 @@ pub fn default_presets() -> Vec<ModelPreset> {
             backend: String::new(),
             devices: String::new(),
             context_size: 524288,
-            ctk: "turbo3".into(),
-            ctv: "turbo3".into(),
+            ctk: "q8_0".into(),
+            ctv: "q8_0".into(),
             tensor_split: "7,8,8,8".into(),
             batch_size: 2048,
             ubatch_size: 2048,
@@ -288,7 +283,6 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
-            no_warmup: true, // historical default; serde default on deserialization
             ..Default::default()
         },
         ModelPreset {
@@ -299,8 +293,8 @@ pub fn default_presets() -> Vec<ModelPreset> {
             backend: String::new(),
             devices: String::new(),
             context_size: 1048576,
-            ctk: "turbo3".into(),
-            ctv: "turbo3".into(),
+            ctk: "q8_0".into(),
+            ctv: "q8_0".into(),
             tensor_split: String::new(),
             batch_size: 2048,
             ubatch_size: 2048,
@@ -324,7 +318,6 @@ pub fn default_presets() -> Vec<ModelPreset> {
             seed: None,
             system_prompt_file: String::new(),
             extra_args: String::new(),
-            no_warmup: true, // historical default; serde default on deserialization
             ..Default::default()
         },
     ]

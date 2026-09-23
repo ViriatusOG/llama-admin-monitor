@@ -914,11 +914,31 @@
                     <input type="number" id="modal-context-size" value="128000">
                 </label>
                 <div class="modal-row">
-                    <label class="modal-field" title="KV cache key quantization type: f16 (best quality), q8_0, turbo3 (4.6x compression, fast)">KV key type (-ctk)
-                        <input type="text" id="modal-ctk" value="q8_0">
+                    <label class="modal-field" title="KV cache key quantization (quality vs VRAM tradeoff). f16 = best quality, most VRAM. q8_0 = recommended for large contexts (~40% less VRAM, negligible quality loss). q4_0 = smallest (~4.6x compression).">KV key type (-ctk)
+                        <select id="modal-ctk">
+                            <option value="f16">f16 (default, best quality)</option>
+                            <option value="q8_0">q8_0 (recommended)</option>
+                            <option value="q5_1">q5_1</option>
+                            <option value="q5_0">q5_0</option>
+                            <option value="q4_1">q4_1</option>
+                            <option value="q4_0">q4_0 (smallest)</option>
+                            <option value="iq4_nl">iq4_nl</option>
+                            <option value="bf16">bf16</option>
+                            <option value="f32">f32 (debug)</option>
+                        </select>
                     </label>
-                    <label class="modal-field" title="KV cache value quantization type: f16 (best quality), q8_0, turbo3 (4.6x compression, fast)">KV value type (-ctv)
-                        <input type="text" id="modal-ctv" value="f16">
+                    <label class="modal-field" title="KV cache value quantization (quality vs VRAM tradeoff). Same options as key type. f16 = best quality, most VRAM. q8_0 = recommended for large contexts.">KV value type (-ctv)
+                        <select id="modal-ctv">
+                            <option value="f16">f16 (default, best quality)</option>
+                            <option value="q8_0">q8_0 (recommended)</option>
+                            <option value="q5_1">q5_1</option>
+                            <option value="q5_0">q5_0</option>
+                            <option value="q4_1">q4_1</option>
+                            <option value="q4_0">q4_0 (smallest)</option>
+                            <option value="iq4_nl">iq4_nl</option>
+                            <option value="bf16">bf16</option>
+                            <option value="f32">f32 (debug)</option>
+                        </select>
                     </label>
                     <label class="modal-field" title="Flash Attention mode: auto (default), on, off. Speeds up inference when supported by model architecture.">Flash attn (-fa)
                         <select id="modal-flash-attn">
@@ -943,10 +963,19 @@
                         <input type="number" id="modal-cram" placeholder="8192">
                     </label>
                 </div>
-                <div class="modal-checks">
-                    <label class="chk" title="Offload the KV cache to CPU when VRAM runs short (--kv-offload)."><input type="checkbox" id="modal-kv-offload"> kv-offload</label>
-                    <label class="chk" title="Shift the context window automatically as it fills, instead of failing (--context-shift)."><input type="checkbox" id="modal-context-shift"> context-shift</label>
-                    <label class="chk" title="Skip the startup warmup pass. Uncheck to let llama-server warm the model at launch."><input type="checkbox" id="modal-no-warmup" checked> no-warmup</label>
+                <div class="modal-row">
+                    <label class="modal-field" title="Whether to offload the KV cache to CPU when VRAM runs short. On (default) = llama.cpp's built-in behaviour; Off = keep KV on GPU only (--no-kv-offload).">KV offload
+                        <select id="modal-kv-offload">
+                            <option value="">on (default)</option>
+                            <option value="off">off (--no-kv-offload)</option>
+                        </select>
+                    </label>
+                    <label class="modal-field" title="Shift the context window automatically as it fills, instead of failing (--context-shift).">Context shift
+                        <input type="checkbox" id="modal-context-shift">
+                    </label>
+                    <label class="modal-field" title="Skip the startup warmup pass. llama.cpp warms the model by default; check to skip (--no-warmup).">Skip warmup
+                        <input type="checkbox" id="modal-no-warmup">
+                    </label>
                 </div>
             </details>
 
@@ -967,8 +996,8 @@
 
             <details class="modal-section">
                 <summary>GPU distribution</summary>
-                <label class="modal-field" title="Layer distribution ratio across GPUs, slash-separated (e.g. '65/35' for 2 GPUs, '7/8/8/8' for 4). Commas are parsed as a single value and put the whole model on the first GPU. Leave empty for single GPU.">Tensor split (-ts)
-                    <input type="text" id="modal-tensor-split" placeholder="7/8/8/8">
+                <label class="modal-field" title="Fraction of the model to offload to each GPU, comma-separated (e.g. '72,28' for 2 GPUs, '7,8,8,8' for 4). Leave empty for single GPU.">Tensor split (-ts)
+                    <input type="text" id="modal-tensor-split" placeholder="7,8,8,8">
                 </label>
                 <div class="modal-field" title="Which GPUs llama-server may offload to (--device). None ticked = all devices. Names come from llama-server --list-devices.">Devices
                     <div class="device-picker" id="modal-devices">

@@ -2140,9 +2140,9 @@ function openPresetModal(mode, id) {
         setOpt('modal-fit', p.fit);
         setVal('modal-fit-target', p.fit_target);
         numOrEmpty('modal-cram', p.cram);
-        setChk('modal-kv-offload', p.kv_offload);
+        setOpt('modal-kv-offload', p.kv_offload);
         setChk('modal-context-shift', p.context_shift);
-        setChk('modal-no-warmup', p.no_warmup ?? true);
+        setChk('modal-no-warmup', p.no_warmup ?? false);
         // Projector
         setVal('modal-mmproj-device', p.mmproj_device);
         setChk('modal-mmproj-offload', p.mmproj_offload);
@@ -2330,7 +2330,7 @@ function presetFromForm() {
         fit: strVal('modal-fit'),
         fit_target: strVal('modal-fit-target'),
         cram: intOrNull('modal-cram'),
-        kv_offload: document.getElementById('modal-kv-offload').checked,
+        kv_offload: strVal('modal-kv-offload'),
         context_shift: document.getElementById('modal-context-shift').checked,
         no_warmup: document.getElementById('modal-no-warmup').checked,
         // Projector
@@ -2580,9 +2580,9 @@ function presetToConfig(p) {
         fit: p.fit || '',
         fit_target: p.fit_target || '',
         cram: p.cram ?? null,
-        kv_offload: !!p.kv_offload,
+        kv_offload: p.kv_offload || '',
         context_shift: !!p.context_shift,
-        no_warmup: p.no_warmup ?? true,
+        no_warmup: p.no_warmup ?? false,
         mmproj_device: p.mmproj_device || '',
         mmproj_offload: !!p.mmproj_offload,
         image_min_tokens: p.image_min_tokens ?? null,
