@@ -417,3 +417,11 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 }
+
+#[test]
+fn test_hardware_presets_parse() {
+    let content = std::fs::read_to_string("docs/hardware_presets.json").unwrap();
+    let presets: Vec<ModelPreset> = serde_json::from_str(&content).unwrap();
+    println!("Parsed successfully: {} presets", presets.len());
+}
+

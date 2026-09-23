@@ -15,6 +15,18 @@ Backwards compatibility is preserved unless explicitly noted.
 - Tensor split (`-ts`) tooltip and placeholder used slash-separated values (`7/8/8/8`); llama.cpp expects **comma-separated** (`7,8,8,8`). Tooltip, placeholder, and example all corrected.
 
 ## [Unreleased]
+
+## [2026.09.22-beta.25]
+### Fixed
+- Replaced the deprecated generic `--draft-min` and `--draft-max` flags with the correct speculative decoding specific flags (`--spec-draft-n-min`/`--spec-ngram-mod-n-min`) depending on the selected `spec-type`, fixing a startup crash when draft decoding was enabled.
+- Fixed a bug where presets would silently disappear on server restart. Added missing `#[serde(default)]` handlers on preset fields (`tensor_split`, `no_mmap`, `ngram_spec`, `parallel_slots`) to gracefully handle missing values from custom or outdated `presets.json` files instead of rejecting the whole file and wiping user data.
+- Replaced the incorrect `--rea` flag with `--reasoning` to correctly enable reasoning on supported llama.cpp builds.
+- Fixed parsing backward compatibility for `kv_offload` boolean-to-string format transition.
+
+### Added
+- Added `docs/hardware_presets.json` providing reference presets for Qwen 27B models on 32GB/64GB GPU setups, including MTP speculative decoding configuration.
+- Added `apply_presets_safe.py` helper script to guarantee backward-compatible injection of presets across versions.
+
 ### Added
 - **Harness reasoning support (DeepSeek/dsh and pi pages).** The `llama-admin-monitor` provider the monitor writes into `~/.dsh/settings.yaml` (DeepSeek page) and `~/.pi/agent/models.json` (pi page) now detects hybrid thinking per preset model by reading the gguf's `tokenizer.chat_template` (header only) and checking for the `enable_thinking` variable. Thinking models get a reasoning capability in both files — `reasoningEfforts: {off, medium}` for dsh, `reasoning: true` plus a `thinkingLevelMap` for pi — and the provider gains the compat switches `thinkingFormat: qwen-chat-template` and `supportsReasoningEffort: false`, so the harness model picker and pi's `/model` offer a **Reasoning effort** control (Off / Medium) that is sent to llama-server as `chat_template_kwargs: {enable_thinking, preserve_thinking}`. Models whose chat template has no `enable_thinking` (or that cannot be read) are written exactly as before, so non-thinking setups are unaffected.
 - **Preset editor: live command preview.** A *Preview command* button shows the exact `llama-server` invocation the preset will launch (resolved binary plus every flag), before saving, with a copy button; if the selected build is not installed, a warning is shown instead of a path. `POST /api/preview-args` reuses the same argument builder as server start.
