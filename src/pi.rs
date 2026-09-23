@@ -260,6 +260,9 @@ pub struct ModelEntry {
     pub context_window: u64,
     /// The preset this entry came from (empty for the placeholder).
     pub preset_id: String,
+    /// The model's chat template supports `enable_thinking`, so the harness
+    /// can offer a reasoning (thinking on/off) control for it.
+    pub thinking: bool,
 }
 
 /// The model id pi uses for a preset: the model file's name without
@@ -299,6 +302,10 @@ pub fn entries_from_presets(presets: &[crate::presets::ModelPreset]) -> Vec<Mode
             name: format!("{} \u{2014} {}", p.name.trim(), model_id_for(&p.model_path)),
             context_window: p.context_size.max(4096),
             preset_id: p.id.clone(),
+            // Reading the gguf header is cheap (metadata only), so do it per
+            // preset. A file we cannot read is treated as non-thinking.
+            thinking: crate::models::gguf_supports_thinking(std::path::Path::new(&p.model_path))
+                .unwrap_or(false),
         });
     }
     if out.is_empty() {
@@ -307,6 +314,7 @@ pub fn entries_from_presets(presets: &[crate::presets::ModelPreset]) -> Vec<Mode
             name: "llama-server (current model)".to_string(),
             context_window: 32768,
             preset_id: String::new(),
+            thinking: false,
         });
     }
     out
@@ -340,26 +348,57 @@ fn write_models_json_at(
     if !providers.is_object() {
         bail!("\"providers\" in {} is not an object", path.display());
     }
+    // llama.cpp's Qwen3 chat templates switch thinking with the
+    // `enable_thinking` chat-template kwarg (boolean: any truthy value
+    // thinks), not a graded reasoning-effort field. Only offer the levels the
+    // wire actually distinguishes — off and on ("medium" is the level name pi
+    // shows for "thinking on") — and mark the rest unsupported so the harness
+    // does not advertise efforts it cannot express.
+    let thinking_map = serde_json::json!({
+        "off": "off",
+        "minimal": null,
+        "low": null,
+        "medium": "medium",
+        "high": null,
+        "xhigh": null
+    });
     let list: Vec<serde_json::Value> = models
         .iter()
         .map(|m| {
-            serde_json::json!({
+            let mut obj = serde_json::json!({
                 "id": m.id,
                 "name": m.name,
                 "contextWindow": m.context_window,
                 "maxTokens": std::cmp::min(m.context_window / 4, 32000).max(4096),
-                "reasoning": false,
+                "reasoning": m.thinking,
                 "input": ["text"]
-            })
+            });
+            if m.thinking {
+                obj["thinkingLevelMap"] = thinking_map.clone();
+            }
+            obj
         })
         .collect();
-    providers[PROVIDER] = serde_json::json!({
+    let any_thinking = models.iter().any(|m| m.thinking);
+    let mut provider = serde_json::json!({
         "baseUrl": format!("http://127.0.0.1:{monitor_port}/v1"),
         "api": "openai-completions",
         // The proxy needs no key, but pi hides keyless models from /model.
         "apiKey": "llama-admin-monitor",
         "models": list
     });
+    if any_thinking {
+        // `supportsReasoningEffort: false` keeps pi off the `reasoning_effort`
+        // body field; `thinkingFormat` tells it to send the chat-template
+        // kwarg instead, which is what llama.cpp understands.
+        provider["compat"] = serde_json::json!({
+            "maxTokensField": "max_tokens",
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "qwen-chat-template"
+        });
+    }
+    providers[PROVIDER] = provider;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -637,6 +676,7 @@ mod tests {
             name: id.to_string(),
             context_window: ctx,
             preset_id: String::new(),
+            thinking: false,
         }
     }
 
@@ -671,6 +711,41 @@ mod tests {
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(v["providers"][PROVIDER]["models"][0]["maxTokens"], 4096);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn models_json_thinking_model_gets_reasoning() {
+        let dir = std::env::temp_dir().join(format!("lam-pi-test3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models.json");
+        let mut m = entry("qwen3-27b", 200000);
+        m.thinking = true;
+        write_models_json_at(path.clone(), 7778, &[m]).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let p = &v["providers"][PROVIDER];
+        assert_eq!(p["compat"]["thinkingFormat"], "qwen-chat-template");
+        assert_eq!(p["compat"]["supportsReasoningEffort"], false);
+        assert_eq!(p["models"][0]["reasoning"], true);
+        assert_eq!(p["models"][0]["thinkingLevelMap"]["off"], "off");
+        assert_eq!(p["models"][0]["thinkingLevelMap"]["medium"], "medium");
+        assert!(p["models"][0]["thinkingLevelMap"]["high"].is_null());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn models_json_non_thinking_model_has_no_reasoning() {
+        let dir = std::env::temp_dir().join(format!("lam-pi-test4-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models.json");
+        write_models_json_at(path.clone(), 7778, &[entry("plain", 8192)]).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let p = &v["providers"][PROVIDER];
+        assert_eq!(p["models"][0]["reasoning"], false);
+        assert!(p["models"][0].get("thinkingLevelMap").is_none());
+        assert!(p.get("compat").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

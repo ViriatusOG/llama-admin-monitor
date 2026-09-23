@@ -254,6 +254,141 @@ pub fn parse_gguf_filename(filename: &str) -> (Option<String>, Option<String>) {
     }
 }
 
+/// True when the model's GGUF `tokenizer.chat_template` supports hybrid
+/// thinking, i.e. it references the `enable_thinking` template variable (the
+/// Qwen3-style switch). Reading only the file's metadata header, so a
+/// multi-gigabyte model costs a couple of megabytes of reads. `None` means the
+/// file is not a readable GGUF (missing, truncated, wrong magic) and the
+/// caller should fall back to its default.
+pub fn gguf_supports_thinking(path: &Path) -> Option<bool> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).ok()?;
+    let mut r = std::io::BufReader::with_capacity(1 << 20, file);
+    // Magic "GGUF" + version.
+    let mut head = [0u8; 8];
+    r.read_exact(&mut head).ok()?;
+    if &head[..4] != b"GGUF" {
+        return None;
+    }
+    let version = u32::from_le_bytes([head[4], head[5], head[6], head[7]]);
+    if version > 3 {
+        return None;
+    }
+    // tensor count, kv count (u64).
+    let mut buf8 = [0u8; 8];
+    r.read_exact(&mut buf8).ok()?;
+    let _tensors = u64::from_le_bytes(buf8);
+    r.read_exact(&mut buf8).ok()?;
+    let kv_count = u64::from_le_bytes(buf8);
+    for _ in 0..kv_count {
+        // Key: u64 length + bytes (+ NUL in v2).
+        r.read_exact(&mut buf8).ok()?;
+        let klen = u64::from_le_bytes(buf8);
+        if klen > 1 << 20 {
+            return None;
+        }
+        let mut key = vec![0u8; klen as usize];
+        r.read_exact(&mut key).ok()?;
+        if version == 2 {
+            let mut nul = [0u8; 1];
+            r.read_exact(&mut nul).ok()?;
+        }
+        let key = String::from_utf8_lossy(&key);
+        // Value type (u32) then value. GGUF value types (ggml gguf.h):
+        //   0 u8, 1 i8, 2 u16, 3 i16, 4 u32, 5 i32, 6 f32, 7 bool,
+        //   8 string, 9 array, 10 u64, 11 i64, 12 f64.
+        let mut buf4 = [0u8; 4];
+        r.read_exact(&mut buf4).ok()?;
+        let vtype = u32::from_le_bytes(buf4);
+        let is_template = key == "tokenizer.chat_template";
+        // Value sizes (ggml gguf.cpp GGUF_TYPE_SIZE): u8/i8/bool = 1 byte,
+        // u16/i16 = 2, u32/i32/f32 = 4, u64/i64/f64 = 8.
+        match vtype {
+            0 | 1 | 7 => r.read_exact(&mut buf4[..1]).ok()?,
+            2 | 3 => r.read_exact(&mut buf4[..2]).ok()?,
+            4..=6 => r.read_exact(&mut buf4).ok()?,
+            8 => {
+                r.read_exact(&mut buf8).ok()?;
+                let slen = u64::from_le_bytes(buf8);
+                if slen > 1 << 22 {
+                    return None;
+                }
+                if is_template {
+                    let mut s = vec![0u8; slen as usize];
+                    r.read_exact(&mut s).ok()?;
+                    return Some(String::from_utf8_lossy(&s).contains("enable_thinking"));
+                }
+                // Not the key we want: skip the bytes without retaining them.
+                let mut left = slen;
+                while left > 0 {
+                    let n = (left.min(1 << 20)) as usize;
+                    let mut tmp = vec![0u8; n];
+                    r.read_exact(&mut tmp).ok()?;
+                    left -= n as u64;
+                }
+            }
+            10..=12 => r.read_exact(&mut buf8).ok()?,
+            // Array: u32 element type + u64 count, then that many elements.
+            // Token tables can be hundreds of thousands of entries, so skip
+            // element by element rather than allocating.
+            9 => {
+                r.read_exact(&mut buf4).ok()?;
+                let etype = u32::from_le_bytes(buf4);
+                r.read_exact(&mut buf8).ok()?;
+                let count = u64::from_le_bytes(buf8);
+                if count > 1 << 26 {
+                    return None;
+                }
+                for _ in 0..count {
+                    match skip_gguf_value(&mut r, etype, &mut buf8, &mut buf4) {
+                        Ok(true) => {}
+                        _ => return None,
+                    }
+                }
+            }
+            _ => return None, // unknown type: stop rather than desync
+        }
+    }
+    // No chat template key at all: not a thinking model.
+    Some(false)
+}
+
+/// Skip one GGUF value of the given type without retaining it.
+/// Returns `Ok(false)` on an unknown element type.
+fn skip_gguf_value(
+    r: &mut std::io::BufReader<std::fs::File>,
+    vtype: u32,
+    buf8: &mut [u8; 8],
+    buf4: &mut [u8; 4],
+) -> std::io::Result<bool> {
+    use std::io::Read;
+    match vtype {
+        0 | 1 | 7 => {
+            r.read_exact(&mut buf4[..1])?;
+        }
+        2 | 3 => {
+            r.read_exact(&mut buf4[..2])?;
+        }
+        4..=6 => {
+            r.read_exact(buf4)?;
+        }
+        8 => {
+            r.read_exact(buf8)?;
+            let slen = u64::from_le_bytes(*buf8);
+            if slen > 1 << 22 {
+                return Ok(false);
+            }
+            let mut s = vec![0u8; slen as usize];
+            r.read_exact(&mut s)?;
+        }
+        10..=12 => {
+            r.read_exact(buf8)?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
 fn is_split_shard(filename: &str) -> bool {
     // Pattern: -NNNNN-of-NNNNN.gguf
     let stem = filename.strip_suffix(".gguf").unwrap_or(filename);
@@ -539,5 +674,133 @@ mod tests {
         assert_eq!(format_size(1_500_000_000), "1.4 GB");
         assert_eq!(format_size(50_000_000), "47.7 MB");
         assert_eq!(format_size(500_000), "488 KB");
+    }
+
+    /// A minimal but structurally valid GGUF v3 header: magic, version,
+    /// zero tensors, and the given string key/value pairs.
+    fn write_gguf_v3(path: &Path, kvs: &[(&str, &str)]) {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"GGUF");
+        b.extend_from_slice(&3u32.to_le_bytes());
+        b.extend_from_slice(&0u64.to_le_bytes()); // tensor count
+        b.extend_from_slice(&(kvs.len() as u64).to_le_bytes());
+        for (k, v) in kvs {
+            let kb = k.as_bytes();
+            b.extend_from_slice(&(kb.len() as u64).to_le_bytes());
+            b.extend_from_slice(kb);
+            b.extend_from_slice(&8u32.to_le_bytes()); // string
+            let vb = v.as_bytes();
+            b.extend_from_slice(&(vb.len() as u64).to_le_bytes());
+            b.extend_from_slice(vb);
+        }
+        std::fs::write(path, b).unwrap();
+    }
+
+    #[test]
+    fn gguf_thinking_detected() {
+        let dir = std::env::temp_dir().join(format!("lam-gguf-thinking-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("think.gguf");
+        write_gguf_v3(
+            &path,
+            &[
+                ("general.architecture", "qwen3"),
+                (
+                    "tokenizer.chat_template",
+                    "{% set enable_thinking = true %}{{ '<|im_start|>user' }}",
+                ),
+            ],
+        );
+        assert_eq!(gguf_supports_thinking(&path), Some(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gguf_array_values_are_skipped() {
+        // A token-table-like string array before the chat template: the
+        // parser must walk past it and still find the template.
+        let dir = std::env::temp_dir().join(format!("lam-gguf-arr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("arr.gguf");
+        let mut b = Vec::new();
+        b.extend_from_slice(b"GGUF");
+        b.extend_from_slice(&3u32.to_le_bytes());
+        b.extend_from_slice(&0u64.to_le_bytes());
+        b.extend_from_slice(&3u64.to_le_bytes()); // 3 kvs
+        // kv 1: a u32 scalar
+        let k = b"general.sampling.top_k";
+        b.extend_from_slice(&(k.len() as u64).to_le_bytes());
+        b.extend_from_slice(k);
+        b.extend_from_slice(&4u32.to_le_bytes());
+        b.extend_from_slice(&40u32.to_le_bytes());
+        // kv 2: an array of two strings
+        let k = b"tokenizer.ggml.tokens";
+        b.extend_from_slice(&(k.len() as u64).to_le_bytes());
+        b.extend_from_slice(k);
+        b.extend_from_slice(&9u32.to_le_bytes()); // array
+        b.extend_from_slice(&8u32.to_le_bytes()); // element type: string
+        b.extend_from_slice(&2u64.to_le_bytes()); // count
+        for tok in [&b"<s>"[..], &b"hello"[..]] {
+            b.extend_from_slice(&(tok.len() as u64).to_le_bytes());
+            b.extend_from_slice(tok);
+        }
+        // kv 3: the chat template, after the array
+        let k = b"tokenizer.chat_template";
+        b.extend_from_slice(&(k.len() as u64).to_le_bytes());
+        b.extend_from_slice(k);
+        b.extend_from_slice(&8u32.to_le_bytes());
+        let tpl = b"{% if enable_thinking %}{% endif %}";
+        b.extend_from_slice(&(tpl.len() as u64).to_le_bytes());
+        b.extend_from_slice(tpl);
+        std::fs::write(&path, b).unwrap();
+        assert_eq!(gguf_supports_thinking(&path), Some(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gguf_non_thinking_detected() {
+        let dir = std::env::temp_dir().join(format!("lam-gguf-notthink-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("plain.gguf");
+        write_gguf_v3(
+            &path,
+            &[
+                ("general.architecture", "llama"),
+                (
+                    "tokenizer.chat_template",
+                    "{{ bos_token }}{% for m in messages %}{{ m.content }}",
+                ),
+            ],
+        );
+        assert_eq!(gguf_supports_thinking(&path), Some(false));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gguf_missing_template_is_not_thinking() {
+        let dir = std::env::temp_dir().join(format!("lam-gguf-notpl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("notpl.gguf");
+        write_gguf_v3(&path, &[("general.architecture", "qwen3")]);
+        assert_eq!(gguf_supports_thinking(&path), Some(false));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gguf_wrong_magic_is_none() {
+        let dir = std::env::temp_dir().join(format!("lam-gguf-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bad.gguf");
+        std::fs::write(&path, b"NOTGGUF\x00\x00\x00\x00\x00\x00\x00\x00").unwrap();
+        assert_eq!(gguf_supports_thinking(&path), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gguf_missing_file_is_none() {
+        let path =
+            std::env::temp_dir().join(format!("lam-gguf-none-{}-absent.gguf", std::process::id()));
+        assert_eq!(gguf_supports_thinking(&path), None);
+        let _ = std::fs::remove_file(&path);
     }
 }

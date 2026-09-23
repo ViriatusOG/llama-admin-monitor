@@ -158,25 +158,47 @@ fn write_settings_at(path: PathBuf, monitor_port: u16, models: &[ModelEntry]) ->
             path.display()
         );
     };
+    // llama.cpp's Qwen3 chat templates switch thinking with the
+    // `enable_thinking` chat-template kwarg (boolean: any truthy value
+    // thinks), not a graded reasoning-effort field. dsh's pi-ai adapter turns
+    // `reasoningEfforts` into the levels a model offers, so declare the two
+    // levels the wire distinguishes — off and on ("medium" is the label shown
+    // for "thinking on").
+    let any_thinking = models.iter().any(|m| m.thinking);
     let model_list: Vec<serde_json::Value> = models
         .iter()
         .map(|m| {
-            serde_json::json!({
+            let mut obj = serde_json::json!({
                 "id": m.id,
                 "name": m.name,
                 "contextWindow": m.context_window,
                 "maxTokens": std::cmp::min(m.context_window / 4, 32000).max(4096),
-            })
+            });
+            if m.thinking {
+                obj["reasoningEfforts"] = serde_json::json!({
+                    "off": "off",
+                    "medium": "medium"
+                });
+            }
+            obj
         })
         .collect();
+    let mut compat = serde_json::json!({
+        "supportsDeveloperRole": false,
+        "maxTokensField": "max_tokens"
+    });
+    if any_thinking {
+        // `supportsReasoningEffort: false` keeps the adapter off the
+        // `reasoning_effort` body field; `thinkingFormat` makes it send the
+        // chat-template kwarg llama.cpp understands instead.
+        compat["supportsReasoningEffort"] = serde_json::json!(false);
+        compat["thinkingFormat"] = serde_json::json!("qwen-chat-template");
+    }
     let provider = serde_json::json!({
         "apiKeyEnv": API_KEY_ENV,
         "api": "openai-completions",
         "baseURL": format!("http://127.0.0.1:{monitor_port}/v1"),
-        "compat": {
-            "supportsDeveloperRole": false,
-            "maxTokensField": "max_tokens"
-        },
+        "compat": compat,
         "models": model_list
     });
     let provider: Value = serde_yaml_ng::to_value(provider)?;
@@ -310,6 +332,7 @@ mod tests {
             name: id.to_string(),
             context_window: ctx,
             preset_id: String::new(),
+            thinking: false,
         }
     }
 
@@ -334,6 +357,38 @@ mod tests {
         assert_eq!(mine["compat"]["maxTokensField"], "max_tokens");
         assert_eq!(mine["models"][0]["id"], "Big 128k");
         assert_eq!(mine["models"][0]["maxTokens"], 32000);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn settings_yaml_thinking_model_gets_reasoning() {
+        let dir = std::env::temp_dir().join(format!("lam-dsh-test3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.yaml");
+        let mut m = entry("Think 128k", 131072);
+        m.thinking = true;
+        write_settings_at(path.clone(), 7778, &[m]).unwrap();
+        let v: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mine = &v["llm-pi-ai"]["providers"][PROVIDER];
+        assert_eq!(mine["compat"]["thinkingFormat"], "qwen-chat-template");
+        assert_eq!(mine["compat"]["supportsReasoningEffort"], false);
+        assert_eq!(mine["models"][0]["reasoningEfforts"]["off"], "off");
+        assert_eq!(mine["models"][0]["reasoningEfforts"]["medium"], "medium");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn settings_yaml_non_thinking_model_has_no_reasoning() {
+        let dir = std::env::temp_dir().join(format!("lam-dsh-test4-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.yaml");
+        write_settings_at(path.clone(), 7778, &[entry("Plain 8k", 8192)]).unwrap();
+        let v: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mine = &v["llm-pi-ai"]["providers"][PROVIDER];
+        assert!(mine["compat"].get("thinkingFormat").is_none());
+        assert!(mine["models"][0].get("reasoningEfforts").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
