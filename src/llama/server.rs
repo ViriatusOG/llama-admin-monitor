@@ -376,11 +376,16 @@ pub fn build_server_args(config: &ServerConfig, use_cuda: bool) -> Vec<String> {
         if ngram {
             a.push("--spec-ngram-size-n".into());
             a.push(config.spec_ngram_size.unwrap_or(24).to_string());
+            a.push("--spec-ngram-mod-n-min".into());
+            a.push(config.draft_min.unwrap_or(8).to_string());
+            a.push("--spec-ngram-mod-n-max".into());
+            a.push(config.draft_max.unwrap_or(24).to_string());
+        } else {
+            a.push("--spec-draft-n-min".into());
+            a.push(config.draft_min.unwrap_or(8).to_string());
+            a.push("--spec-draft-n-max".into());
+            a.push(config.draft_max.unwrap_or(24).to_string());
         }
-        a.push("--draft-min".into());
-        a.push(config.draft_min.unwrap_or(8).to_string());
-        a.push("--draft-max".into());
-        a.push(config.draft_max.unwrap_or(24).to_string());
     }
     if !config.draft_model.is_empty() {
         a.push("-md".into());
@@ -1136,8 +1141,8 @@ mod tests {
         let a = build_server_args(&c, false);
         assert_eq!(pair(&a, "--spec-type"), Some("ngram-mod".into()));
         assert_eq!(pair(&a, "--spec-ngram-size-n"), Some("24".into()));
-        assert_eq!(pair(&a, "--draft-min"), Some("8".into()));
-        assert_eq!(pair(&a, "--draft-max"), Some("24".into()));
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-min"), Some("8".into()));
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-max"), Some("24".into()));
 
         // Explicit override wins: draft-mtp gets no ngram-size flag
         c.spec_type = "draft-mtp".into();
@@ -1150,7 +1155,8 @@ mod tests {
         c.spec_type = "none".into();
         let a = build_server_args(&c, false);
         assert_eq!(pair(&a, "--spec-type"), None);
-        assert_eq!(pair(&a, "--draft-min"), None);
+        assert_eq!(pair(&a, "--spec-draft-n-min"), None);
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-min"), None);
 
         // No spec at all, but a draft model still loads
         c.spec_type.clear();
