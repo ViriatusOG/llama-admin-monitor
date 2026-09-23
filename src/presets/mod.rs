@@ -13,11 +13,15 @@ pub struct ModelPreset {
     pub context_size: u64,
     pub ctk: String,
     pub ctv: String,
+    #[serde(default)]
     pub tensor_split: String,
     pub batch_size: u32,
     pub ubatch_size: u32,
+    #[serde(default)]
     pub no_mmap: bool,
+    #[serde(default)]
     pub ngram_spec: bool,
+    #[serde(default)]
     pub parallel_slots: u32,
     // Model & memory
     #[serde(default)]
