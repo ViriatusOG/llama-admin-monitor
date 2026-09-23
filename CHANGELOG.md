@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on (earlier stable releases were CalVer `YYYY.M.D`). Beta releases keep zero-padded CalVer tags, `vYYYY.MM.DD-beta.NN`.
 Backwards compatibility is preserved unless explicitly noted.
 
+## [2026.09.22-beta.26]
+### Fixed
+- Fixed a startup crash when launching with any ngram-family speculative decoding type (`ngram-mod`, `ngram-simple`, `ngram-map-k`, `ngram-map-k4v`, `ngram-cache`): the generic `--spec-ngram-size-n` flag was removed upstream and `llama-server` aborts on it. Each ngram type now emits its own tuning flags — `ngram-mod` gets `--spec-ngram-mod-n-min` / `--spec-ngram-mod-n-max` / `--spec-ngram-mod-n-match`, the `ngram-simple` / `ngram-map-k` / `ngram-map-k4v` types get `--spec-ngram-<type>-size-n` / `--spec-ngram-<type>-min-hits` (omitted when the field is unset), and `ngram-cache` gets none (no numeric tuning flags exist for it upstream). The legacy ngram-spec checkbox (ngram-mod) is covered by the same fix.
+
 ## [2026.09.22-beta.23]
 ### Fixed
 - Example presets used `turbo3` for KV cache key/value type, which is **not a valid llama.cpp value** (allowed: `f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1`). Launching any of the three example presets crashed llama-server at startup. Replaced with `q8_0` and renamed the presets accordingly.

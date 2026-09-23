@@ -424,4 +424,3 @@ fn test_hardware_presets_parse() {
     let presets: Vec<ModelPreset> = serde_json::from_str(&content).unwrap();
     println!("Parsed successfully: {} presets", presets.len());
 }
-

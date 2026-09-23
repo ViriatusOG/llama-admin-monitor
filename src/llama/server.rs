@@ -374,12 +374,39 @@ pub fn build_server_args(config: &ServerConfig, use_cuda: bool) -> Vec<String> {
             "ngram-mod" | "ngram-simple" | "ngram-map-k" | "ngram-map-k4v" | "ngram-cache"
         );
         if ngram {
-            a.push("--spec-ngram-size-n".into());
-            a.push(config.spec_ngram_size.unwrap_or(24).to_string());
-            a.push("--spec-ngram-mod-n-min".into());
-            a.push(config.draft_min.unwrap_or(8).to_string());
-            a.push("--spec-ngram-mod-n-max".into());
-            a.push(config.draft_max.unwrap_or(24).to_string());
+            // Per-type tuning flags. The generic `--spec-ngram-size-n` flag
+            // was removed upstream and aborts llama-server at startup, so
+            // each ngram type must use its own flag family.
+            match spec_type {
+                "ngram-mod" => {
+                    a.push("--spec-ngram-mod-n-min".into());
+                    a.push(config.draft_min.unwrap_or(8).to_string());
+                    a.push("--spec-ngram-mod-n-max".into());
+                    a.push(config.draft_max.unwrap_or(24).to_string());
+                    // n_match must be >= 1; fall back to the upstream default.
+                    a.push("--spec-ngram-mod-n-match".into());
+                    a.push(
+                        config
+                            .spec_ngram_size
+                            .filter(|v| *v >= 1)
+                            .unwrap_or(24)
+                            .to_string(),
+                    );
+                }
+                "ngram-simple" | "ngram-map-k" | "ngram-map-k4v" => {
+                    let sub = spec_type.strip_prefix("ngram-").unwrap_or("simple");
+                    if let Some(v) = config.spec_ngram_size.filter(|v| *v >= 1) {
+                        a.push(format!("--spec-ngram-{sub}-size-n"));
+                        a.push(v.to_string());
+                    }
+                    if let Some(h) = config.draft_min.filter(|v| *v >= 1) {
+                        a.push(format!("--spec-ngram-{sub}-min-hits"));
+                        a.push(h.to_string());
+                    }
+                }
+                // ngram-cache has no numeric tuning flags upstream.
+                _ => {}
+            }
         } else {
             a.push("--spec-draft-n-min".into());
             a.push(config.draft_min.unwrap_or(8).to_string());
@@ -1140,16 +1167,54 @@ mod tests {
         c.ngram_spec = true;
         let a = build_server_args(&c, false);
         assert_eq!(pair(&a, "--spec-type"), Some("ngram-mod".into()));
-        assert_eq!(pair(&a, "--spec-ngram-size-n"), Some("24".into()));
+        // Per-type flags only: the removed generic --spec-ngram-size-n must not appear
+        assert_eq!(pair(&a, "--spec-ngram-size-n"), None);
         assert_eq!(pair(&a, "--spec-ngram-mod-n-min"), Some("8".into()));
         assert_eq!(pair(&a, "--spec-ngram-mod-n-max"), Some("24".into()));
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-match"), Some("24".into()));
 
-        // Explicit override wins: draft-mtp gets no ngram-size flag
+        // ngram-mod: user-set ngram size maps to the lookup length (n-match)
+        c.spec_ngram_size = Some(48);
+        let a = build_server_args(&c, false);
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-match"), Some("48".into()));
+
+        // ngram-simple: size-n from spec_ngram_size, min-hits from draft_min
+        c.spec_type = "ngram-simple".into();
+        c.spec_ngram_size = Some(12);
+        c.draft_min = Some(3);
+        let a = build_server_args(&c, false);
+        assert_eq!(pair(&a, "--spec-type"), Some("ngram-simple".into()));
+        assert_eq!(pair(&a, "--spec-ngram-simple-size-n"), Some("12".into()));
+        assert_eq!(pair(&a, "--spec-ngram-simple-min-hits"), Some("3".into()));
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-min"), None);
+
+        // ngram-map-k / ngram-map-k4v use their own flag families
+        c.spec_type = "ngram-map-k".into();
+        let a = build_server_args(&c, false);
+        assert_eq!(pair(&a, "--spec-ngram-map-k-size-n"), Some("12".into()));
+        assert_eq!(pair(&a, "--spec-ngram-map-k-min-hits"), Some("3".into()));
+        c.spec_type = "ngram-map-k4v".into();
+        let a = build_server_args(&c, false);
+        assert_eq!(pair(&a, "--spec-ngram-map-k4v-size-n"), Some("12".into()));
+
+        // ngram-cache has no numeric tuning flags
+        c.spec_type = "ngram-cache".into();
+        let a = build_server_args(&c, false);
+        assert_eq!(pair(&a, "--spec-type"), Some("ngram-cache".into()));
+        assert_eq!(pair(&a, "--spec-ngram-size-n"), None);
+        assert_eq!(pair(&a, "--spec-ngram-simple-size-n"), None);
+        assert_eq!(pair(&a, "--spec-ngram-mod-n-min"), None);
+
+        // Explicit override wins: draft-mtp gets no ngram flags
         c.spec_type = "draft-mtp".into();
         c.spec_ngram_size = Some(48);
+        c.draft_min = None;
+        c.draft_max = None;
         let a = build_server_args(&c, false);
         assert_eq!(pair(&a, "--spec-type"), Some("draft-mtp".into()));
         assert_eq!(pair(&a, "--spec-ngram-size-n"), None);
+        assert_eq!(pair(&a, "--spec-draft-n-min"), Some("8".into()));
+        assert_eq!(pair(&a, "--spec-draft-n-max"), Some("24".into()));
 
         // "none" disables speculation entirely
         c.spec_type = "none".into();
