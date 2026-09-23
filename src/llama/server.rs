@@ -95,7 +95,7 @@ pub struct ServerConfig {
     #[serde(default)]
     pub ignore_eos: bool,
     // Reasoning / thinking control
-    /// Reasoning mode for hybrid thinking models (`--rea`): on/off/auto.
+    /// Reasoning mode for hybrid thinking models (`--reasoning`): on/off/auto.
     #[serde(default)]
     pub reasoning: String,
     /// Thinking effort level (`--reasoning-effort`): xhigh/high/medium/low/none.
@@ -273,7 +273,7 @@ pub fn build_server_args(config: &ServerConfig, use_cuda: bool) -> Vec<String> {
 
     // Reasoning / thinking control
     if !config.reasoning.is_empty() {
-        a.push("--rea".into());
+        a.push("--reasoning".into());
         a.push(config.reasoning.clone());
     }
     if !config.reasoning_effort.is_empty() {
@@ -1069,7 +1069,7 @@ mod tests {
             "--presence-penalty",
             "--frequency-penalty",
             "--ignore-eos",
-            "--rea",
+            "--reasoning",
             "--reasoning-effort",
             "--reasoning-preserve",
             "--chat-template-kwargs",
@@ -1119,7 +1119,7 @@ mod tests {
         c.reasoning_preserve = true;
         c.chat_template_kwargs = r#"{"reasoning_effort":"medium"}"#.into();
         let a = build_server_args(&c, false);
-        assert_eq!(pair(&a, "--rea"), Some("on".into()));
+        assert_eq!(pair(&a, "--reasoning"), Some("on".into()));
         assert_eq!(pair(&a, "--reasoning-effort"), Some("medium".into()));
         assert!(has(&a, "--reasoning-preserve"));
         assert_eq!(

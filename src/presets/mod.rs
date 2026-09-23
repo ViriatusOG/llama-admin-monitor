@@ -108,7 +108,7 @@ pub struct ModelPreset {
     #[serde(default)]
     pub fit_target: String,
     /// KV offload mode: empty = llama.cpp default (enabled), "off" = `--no-kv-offload`.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_kv_offload")]
     pub kv_offload: String,
     #[serde(default)]
     pub cram: Option<i32>,
@@ -133,6 +133,30 @@ pub struct ModelPreset {
     pub system_prompt_file: String,
     #[serde(default)]
     pub extra_args: String,
+}
+
+fn deserialize_kv_offload<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum KvOffloadVal {
+        Bool(bool),
+        String(String),
+    }
+
+    match KvOffloadVal::deserialize(deserializer)? {
+        KvOffloadVal::Bool(b) => {
+            if b {
+                Ok(String::new())
+            } else {
+                Ok("off".to_string())
+            }
+        }
+        KvOffloadVal::String(s) => Ok(s),
+    }
 }
 
 fn next_id() -> String {
