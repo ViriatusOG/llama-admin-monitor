@@ -442,6 +442,7 @@
                     </div>
                     <div class="form-group bench-action-group">
                         <label class="form-label">&nbsp;</label>
+                        <button class="btn" type="button" onclick="autoSweepBenchmark()" title="Auto-fill optimal sweep ranges">Auto-Sweep</button>
                         <button class="btn btn-primary" id="btn-bench-toggle" type="button" onclick="toggleBenchmark()">Start benchmark</button>
                     </div>
                 </div>
@@ -1200,6 +1201,7 @@
             </div>
             </div><!-- /modal-body -->
             <div class="modal-buttons">
+                <button type="button" class="btn" onclick="autoTunePreset()" title="Calculate optimal settings for selected GPUs">Auto-Tune</button>
                 <button type="button" class="btn" onclick="previewServerArgs()">Preview command</button>
                 <button type="button" class="btn" onclick="closePresetModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary" id="btn-modal-save">Save</button>

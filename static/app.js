@@ -79,6 +79,7 @@ let serverRunning = false;
 let prevLogLen = 0;
 let totalVramMb = 0;
 let usedVramMb = 0;
+let latestGpuMetrics = null;
 let allModelsCache = [];
 let lastGpuCount = -1;
 
@@ -2856,6 +2857,7 @@ const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') +
 ws.onopen = () => { wsConnected = true; renderRuntime(); scheduleUpdateChecks(); fetchAppLog(); };
 ws.onmessage = e => {
     const d = JSON.parse(e.data);
+    if (d.gpu) latestGpuMetrics = d.gpu;
 
     // Server state
     const wasRunning = serverRunning;
@@ -3945,3 +3947,74 @@ async function stopDsh() {
     detachTerm(dshSession);
     await refreshDshStatus();
 }
+
+
+// --- Auto-Tune and Auto-Sweep ---
+
+function autoTunePreset() {
+    const devicesPicker = Array.from(document.querySelectorAll("#modal-devices input[type=\"checkbox\"]"));
+    const checkedDevices = devicesPicker.filter(cb => cb.checked).map(cb => cb.value);
+    
+    // If none checked, assume all available GPUs
+    const targetGPUs = checkedDevices.length > 0 ? checkedDevices : (latestGpuMetrics ? Object.keys(latestGpuMetrics) : []);
+    
+    if (targetGPUs.length === 0) {
+        showToast("No GPU data available to auto-tune.", "error");
+        return;
+    }
+    
+    // Calculate total VRAM and VRAM ratios
+    let totalTargetVram = 0;
+    const vramByGPU = targetGPUs.map(name => {
+        const vram = (latestGpuMetrics && latestGpuMetrics[name] && latestGpuMetrics[name].vram_total) ? latestGpuMetrics[name].vram_total : 16000;
+        totalTargetVram += vram;
+        return { name, vram };
+    });
+    
+    // Set KV Cache options
+    document.getElementById("modal-ctk").value = "q8_0";
+    document.getElementById("modal-ctv").value = "q8_0";
+    
+    // Enable Flash Attention
+    document.getElementById("modal-flash-attn").value = "on";
+    
+    // Set GPU Layers to max
+    document.getElementById("modal-gpu-layers").value = 999;
+    
+    // Set Tensor Split if multiple GPUs
+    if (vramByGPU.length > 1) {
+        const ratios = vramByGPU.map(g => Math.round((g.vram / totalTargetVram) * 100));
+        document.getElementById("modal-tensor-split").value = ratios.join(",");
+    } else {
+        document.getElementById("modal-tensor-split").value = "";
+    }
+    
+    // Set typical batch sizes
+    document.getElementById("modal-batch-size").value = 512;
+    document.getElementById("modal-ubatch-size").value = 512;
+    
+    // Check if model filename suggests MTP
+    const modelPath = document.getElementById("modal-model-path").value;
+    if (modelPath.toLowerCase().includes("mtp")) {
+        document.getElementById("modal-spec-type").value = "draft-mtp";
+    }
+    
+    showToast("Auto-tuned for " + targetGPUs.length + " GPU" + (targetGPUs.length > 1 ? "s" : "") + "! Review and click Save.", "success");
+    if (typeof refreshDirtyDots === "function") refreshDirtyDots();
+}
+
+function autoSweepBenchmark() {
+    document.getElementById("bench-batch").value = "256, 512, 1024";
+    document.getElementById("bench-ubatch").value = "256, 512";
+    document.getElementById("bench-threads").value = "4, 8, 16";
+    
+    const modelId = document.getElementById("bench-model-select").value;
+    const p = presets ? presets.find(p => p.id === modelId) : null;
+    
+    if (p && p.tensor_split) {
+        document.getElementById("bench-splits").value = p.tensor_split + ", 50,50";
+    }
+    
+    showToast("Sweep ranges auto-filled based on CPU and presets!", "success");
+}
+
