@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and stable releases use [Semantic Versioning](https://semver.org/) from 1.0.0 on (earlier stable releases were CalVer `YYYY.M.D`). Beta releases keep zero-padded CalVer tags, `vYYYY.MM.DD-beta.NN`.
 Backwards compatibility is preserved unless explicitly noted.
 
+## [2026.09.22-beta.27]
+### Added
+- **Auto-Tune Presets**: Added an "Auto-Tune" button to the preset editor. It uses live GPU telemetry to proportionally calculate the optimal tensor split across your selected GPUs, sets optimal KV cache options (`-ctk q8_0`, `-ctv q8_0`), enables Flash Attention, and automatically sets Speculative Decoding to `draft-mtp` if the model filename suggests MTP support.
+- **Auto-Sweep Benchmarks**: Added an "Auto-Sweep" button to the Benchmark tab that pre-fills optimal testing ranges for Batch sizes, Micro-batches, Threads, and evaluates your preset's configured tensor split against a 50/50 baseline.
+
 ## [2026.09.22-beta.26]
 ### Fixed
 - Fixed a startup crash when launching with any ngram-family speculative decoding type (`ngram-mod`, `ngram-simple`, `ngram-map-k`, `ngram-map-k4v`, `ngram-cache`): the generic `--spec-ngram-size-n` flag was removed upstream and `llama-server` aborts on it. Each ngram type now emits its own tuning flags — `ngram-mod` gets `--spec-ngram-mod-n-min` / `--spec-ngram-mod-n-max` / `--spec-ngram-mod-n-match`, the `ngram-simple` / `ngram-map-k` / `ngram-map-k4v` types get `--spec-ngram-<type>-size-n` / `--spec-ngram-<type>-min-hits` (omitted when the field is unset), and `ngram-cache` gets none (no numeric tuning flags exist for it upstream). The legacy ngram-spec checkbox (ngram-mod) is covered by the same fix.
